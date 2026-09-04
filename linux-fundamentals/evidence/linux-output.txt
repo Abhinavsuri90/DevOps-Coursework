@@ -1,0 +1,28 @@
+$ echo "DevOps link practice" > original.txt
+$ ln -s original.txt soft-link.txt
+$ ln original.txt hard-link.txt
+$ ls -li original.txt soft-link.txt hard-link.txt
+96028174 -rw-r--r--@ 2 abhinavsuri  staff  21 Sep  4 23:58 hard-link.txt
+96028174 -rw-r--r--@ 2 abhinavsuri  staff  21 Sep  4 23:58 original.txt
+96028175 lrwxr-xr-x@ 1 abhinavsuri  staff  12 Sep  4 23:58 soft-link.txt -> original.txt
+$ readlink soft-link.txt
+original.txt
+$ rm soft-link.txt hard-link.txt original.txt
+
+$ adduser coursework-user
+zsh: command not found: adduser
+$ useradd coursework-user
+zsh: command not found: useradd
+
+$ journalctl --no-pager -n 20
+zsh: command not found: journalctl
+
+$ pwd
+/Users/abhinavsuri/Desktop/DevOps-Coursework/linux-fundamentals
+$ ls -lah
+total 0
+drwxr-xr-x@ 2 abhinavsuri  staff    64B Sep  4 23:58 .
+drwxr-xr-x@ 3 abhinavsuri  staff    96B Sep  4 23:58 ..
+$ df -h .
+Filesystem      Size    Used   Avail Capacity iused ifree %iused  Mounted on
+/dev/disk3s5   460Gi   254Gi   167Gi    61%    2.8M  1.8G    0%   /System/Volumes/Data

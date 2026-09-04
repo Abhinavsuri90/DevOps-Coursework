@@ -1,0 +1,31 @@
+$ ping -c 2 google.com
+PING google.com (172.217.161.142): 56 data bytes
+64 bytes from 172.217.161.142: icmp_seq=0 ttl=117 time=30.525 ms
+64 bytes from 172.217.161.142: icmp_seq=1 ttl=117 time=31.817 ms
+
+--- google.com ping statistics ---
+2 packets transmitted, 2 packets received, 0.0% packet loss
+round-trip min/avg/max/stddev = 30.525/31.171/31.817/0.646 ms
+
+$ nc -zv google.com 80
+Connection to google.com port 80 [tcp/http] succeeded!
+
+$ nslookup google.com
+Server:		8.8.8.8
+Address:	8.8.8.8#53
+
+Non-authoritative answer:
+Name:	google.com
+Address: 172.217.161.142
+
+$ curl -I https://www.google.com
+HTTP/2 200 
+content-type: text/html; charset=ISO-8859-1
+date: Fri, 04 Sep 2026 18:33:44 GMT
+server: gws
+
+$ traceroute -m 3 google.com
+traceroute to google.com (172.217.161.142), 3 hops max, 40 byte packets
+ 1  wifi.height8tech.com (100.129.160.1)  9.373 ms  8.150 ms  5.945 ms
+ 2  202.131.133.5.convergentindia.com (202.131.133.5)  6.937 ms  32.946 ms  8.992 ms
+ 3  115.117.125.189.static-mumbai.vsnl.net.in (115.117.125.189)  127.878 ms  9.641 ms  10.426 ms

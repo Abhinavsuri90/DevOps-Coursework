@@ -1,6 +1,10 @@
-FROM openjdk:17-alpine
+FROM eclipse-temurin:21-jdk-alpine AS builder
+WORKDIR /src
+COPY HelloWorld.java ./
+RUN javac HelloWorld.java
+
+FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
-COPY Main.java ./
-RUN javac Main.java
+COPY --from=builder /src/HelloWorld.class ./
 EXPOSE 8080
-CMD ["java", "Main"]
+CMD ["java", "HelloWorld"]

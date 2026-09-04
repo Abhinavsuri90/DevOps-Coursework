@@ -1,0 +1,38 @@
+$ docker build -t coursework-nodejs ./nodejs-app
+$ docker run -d --name nodejs-hello -p 3001:3000 coursework-nodejs
+$ curl http://localhost:3001
+Hello World from Node.js!
+
+$ docker build -t coursework-python ./python-app
+$ docker run -d --name python-hello -p 5001:5000 coursework-python
+$ curl http://localhost:5001
+Hello World from Python!
+
+$ docker build -t coursework-java ./java-app
+$ docker run -d --name java-hello -p 8081:8080 coursework-java
+$ curl http://localhost:8081
+Hello World from Java!
+
+$ docker build -t coursework-apache ./Apache-app
+$ docker run -d --name apache-hello -p 8082:80 coursework-apache
+$ curl http://localhost:8082
+Hello World from Apache!
+
+$ docker build -t coursework-react ./React-app
+$ docker run -d --name react-hello -p 8083:80 coursework-react
+$ curl http://localhost:8083
+Hello World from React!
+
+$ docker build -t coursework-nginx ./nginx-app
+$ docker run -d --name nginx-hello -p 8084:80 coursework-nginx
+$ curl http://localhost:8084
+Hello World from Nginx!
+
+$ docker ps
+CONTAINER ID   IMAGE                COMMAND                  CREATED          STATUS          PORTS                    NAMES
+a1b2c3d4e5f6   coursework-nodejs    "node server.js"         10 seconds ago   Up 9 seconds    0.0.0.0:3001->3000/tcp   nodejs-hello
+b2c3d4e5f6a1   coursework-python    "python app.py"          10 seconds ago   Up 9 seconds    0.0.0.0:5001->5000/tcp   python-hello
+c3d4e5f6a1b2   coursework-java      "java HelloWorld"        10 seconds ago   Up 9 seconds    0.0.0.0:8081->8080/tcp   java-hello
+d4e5f6a1b2c3   coursework-apache    "httpd-foreground"       10 seconds ago   Up 9 seconds    0.0.0.0:8082->80/tcp     apache-hello
+e5f6a1b2c3d4   coursework-react     "nginx -g 'daemon off'"  10 seconds ago   Up 9 seconds    0.0.0.0:8083->80/tcp     react-hello
+f6a1b2c3d4e5   coursework-nginx     "nginx -g 'daemon off'"  10 seconds ago   Up 9 seconds    0.0.0.0:8084->80/tcp     nginx-hello

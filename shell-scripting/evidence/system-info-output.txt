@@ -1,0 +1,22 @@
+==========================================
+         SYSTEM INFORMATION SCRIPT        
+==========================================
+Date     : Sat Sep  5 00:02:22 IST 2026
+Hostname : Abhinavs-MacBook-Air-2.local
+User     : abhinavsuri
+==========================================
+
+--- Disk Usage ---
+Filesystem      Size    Used   Avail Capacity iused ifree %iused  Mounted on
+/dev/disk3s5   460Gi   254Gi   167Gi    61%    2.8M  1.8G    0%   /System/Volumes/Data
+
+Created directory: system-info-output
+Created file: system-info-output/processes.txt
+--- Fetching Running Processes ---
+Running processes successfully saved to system-info-output/processes.txt.
+
+First 5 lines of saved file:
+USER               PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND
+root              3299  37.0  0.4 435342720  35488   ??  Ss   12:02AM   0:00.15 /System/Library/PrivateFrameworks/...
+_windowserver      412  27.2  0.5 436553408  42560   ??  Ss   11:17PM   5:54.90 /System/Library/PrivateFrameworks/...
+abhinavsuri       2443  24.0  5.0 1894076144 420064   ??  S    11:36PM   1:22.97 /Applications/Antigravity IDE.app/...

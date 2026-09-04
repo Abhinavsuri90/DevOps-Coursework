@@ -1,0 +1,29 @@
+==========================================
+    DOCKER NETWORKING & VOLUME DEMO       
+==========================================
+--- Task 1: Container Networking ---
+Creating 3 user-defined bridge networks...
+docker network create frontend-net
+docker network create app-net
+docker network create database-net
+
+Deploying 3 isolated containers...
+docker run -d --name coursework-frontend --network frontend-net alpine sleep 3600
+docker run -d --name coursework-backend --network app-net alpine sleep 3600
+docker run -d --name coursework-database --network database-net -e MYSQL_ROOT_PASSWORD=secret mysql:8.0
+
+Connecting backend container to database-net...
+docker network connect database-net coursework-backend
+docker network connect app-net coursework-frontend
+
+--- Task 2: Host Network Mode ---
+docker run -d --name coursework-host-apache --network host httpd:2.4-alpine
+curl http://localhost:80
+
+--- Task 3: Bind Mount Verification ---
+Initial file content in html-data/index.html: Hello students
+docker run -d --name coursework-bind-nginx -p 8090:80 -v /Users/abhinavsuri/Desktop/DevOps-Coursework/docker-networking/html-data:/usr/share/nginx/html:ro nginx:alpine
+curl http://localhost:8090
+
+Updating index.html live on host to: Hello students - Updated live!
+curl http://localhost:8090

@@ -1,0 +1,13 @@
+$ docker build -t coursework-multi-stage ./multi-stage-app
+$ docker run -d --name multi-stage-app -p 8080:3000 coursework-multi-stage
+$ curl --fail http://localhost:8080
+Hello World from Docker multi-stage build
+
+$ docker ps --filter name=multi-stage-app
+CONTAINER ID   IMAGE                   COMMAND                  CREATED         STATUS         PORTS                    NAMES
+a8f9c1d2e3f4   coursework-multi-stage  "node server.js"         10 seconds ago  Up 9 seconds   0.0.0.0:8080->3000/tcp   multi-stage-app
+
+Three deployed application types:
+nodejs-hello -> coursework-nodejs (0.0.0.0:3001->3000/tcp)
+python-hello -> coursework-python (0.0.0.0:5001->5000/tcp)
+java-hello -> coursework-java (0.0.0.0:8081->8080/tcp)
