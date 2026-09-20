@@ -1,0 +1,41 @@
+{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {
+    "name": "canary-stable"
+  },
+  "spec": {
+    "replicas": 9,
+    "selector": {
+      "matchLabels": {
+        "app": "canary",
+        "track": "stable"
+      }
+    },
+    "template": {
+      "metadata": {
+        "labels": {
+          "app": "canary",
+          "track": "stable"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "app",
+            "image": "hashicorp/http-echo:1.0.0",
+            "args": [
+              "-listen=:5678",
+              "-text=v1"
+            ],
+            "ports": [
+              {
+                "containerPort": 5678
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

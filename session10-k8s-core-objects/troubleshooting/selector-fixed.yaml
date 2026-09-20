@@ -1,0 +1,39 @@
+{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {
+    "name": "selector-mismatch"
+  },
+  "spec": {
+    "replicas": 3,
+    "selector": {
+      "matchLabels": {
+        "app": "selector-mismatch"
+      }
+    },
+    "template": {
+      "metadata": {
+        "labels": {
+          "app": "selector-mismatch"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "app",
+            "image": "hashicorp/http-echo:1.0.0",
+            "args": [
+              "-listen=:5678",
+              "-text=v1"
+            ],
+            "ports": [
+              {
+                "containerPort": 5678
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

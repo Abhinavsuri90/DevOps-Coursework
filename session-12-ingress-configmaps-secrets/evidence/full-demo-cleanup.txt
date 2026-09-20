@@ -1,0 +1,19 @@
+$ bash 04-full-demo/cleanup.sh
+ingress.networking.k8s.io "yatri-ingress" deleted from default namespace
+deployment.apps "yatri-frontend" deleted from default namespace
+service "yatri-frontend" deleted from default namespace
+deployment.apps "yatri-backend" deleted from default namespace
+service "yatri-backend" deleted from default namespace
+secret "yatri-demo-secret" deleted from default namespace
+configmap "yatri-config" deleted from default namespace
+$ kubectl get ... -l app=yatri-app
+No resources found in default namespace.
+$ kubectl delete pvc data-mysql-0 data-mysql-1
+persistentvolumeclaim "data-mysql-0" deleted from default namespace
+persistentvolumeclaim "data-mysql-1" deleted from default namespace
+$ kubectl get pods
+NAME                              READY   STATUS        RESTARTS   AGE
+yatri-backend-74dd954ccf-7hrmn    1/1     Terminating   0          2m1s
+yatri-backend-74dd954ccf-lszdk    1/1     Terminating   0          2m1s
+yatri-frontend-5f8d88885b-7lm8r   0/1     Completed     0          2m1s
+yatri-frontend-5f8d88885b-dzql6   0/1     Completed     0          2m1s

@@ -1,0 +1,52 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "lifecycle-init",
+    "labels": {
+      "app": "lifecycle-init"
+    }
+  },
+  "spec": {
+    "containers": [
+      {
+        "name": "app",
+        "image": "busybox:1.36",
+        "command": [
+          "sh",
+          "-c",
+          "cat /shared/ready; sleep 3600"
+        ],
+        "volumeMounts": [
+          {
+            "name": "shared",
+            "mountPath": "/shared"
+          }
+        ]
+      }
+    ],
+    "volumes": [
+      {
+        "name": "shared",
+        "emptyDir": {}
+      }
+    ],
+    "initContainers": [
+      {
+        "name": "prepare",
+        "image": "busybox:1.36",
+        "command": [
+          "sh",
+          "-c",
+          "echo ready > /shared/ready"
+        ],
+        "volumeMounts": [
+          {
+            "name": "shared",
+            "mountPath": "/shared"
+          }
+        ]
+      }
+    ]
+  }
+}

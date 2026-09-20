@@ -1,0 +1,52 @@
+$ kubectl apply -f replicaset.yml
+replicaset.apps/course-rs created
+$ kubectl wait --for=condition=Ready pod -l app=course-rs --timeout=120s
+pod/course-rs-gmn7l condition met
+pod/course-rs-ljlnl condition met
+pod/course-rs-p4trk condition met
+$ kubectl get pods -l app=course-rs
+NAME              READY   STATUS    RESTARTS   AGE
+course-rs-gmn7l   1/1     Running   0          7s
+course-rs-ljlnl   1/1     Running   0          7s
+course-rs-p4trk   1/1     Running   0          7s
+$ kubectl delete pod course-rs-gmn7l
+pod "course-rs-gmn7l" deleted from default namespace
+$ kubectl get pods -l app=course-rs
+NAME              READY   STATUS              RESTARTS   AGE
+course-rs-6qbzs   0/1     ContainerCreating   0          3s
+course-rs-gmn7l   1/1     Terminating         0          11s
+course-rs-ljlnl   1/1     Running             0          11s
+course-rs-p4trk   1/1     Running             0          11s
+replicaset.apps "course-rs" deleted from default namespace
+$ kubectl apply -f mysql secret, service, statefulset
+secret/mysql-demo-auth created
+service/mysql created
+statefulset.apps/mysql created
+$ kubectl rollout status statefulset/mysql --timeout=240s
+Waiting for statefulset spec update to be observed...
+Waiting for 2 pods to be ready...
+Waiting for 2 pods to be ready...
+Waiting for 1 pods to be ready...
+Waiting for 1 pods to be ready...
+partitioned roll out complete: 2 new pods have been updated...
+$ kubectl get pods mysql-0 mysql-1
+NAME      READY   STATUS    RESTARTS   AGE
+mysql-0   1/1     Running   0          2m34s
+mysql-1   1/1     Running   0          10s
+$ kubectl get pvc data-mysql-0 data-mysql-1
+NAME           STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
+data-mysql-0   Bound    pvc-1c4af791-1032-4338-bb40-e6ad225eb89d   1Gi        RWO            standard       <unset>                 2m36s
+data-mysql-1   Bound    pvc-6d819f26-1ed1-47a6-a817-36ec1411a796   1Gi        RWO            standard       <unset>                 11s
+statefulset.apps "mysql" deleted from default namespace
+service "mysql" deleted from default namespace
+secret "mysql-demo-auth" deleted from default namespace
+$ kubectl apply -f daemonset/node-agent-ds.yaml
+daemonset.apps/node-agent created
+$ kubectl rollout status daemonset/node-agent --timeout=120s
+Waiting for daemon set spec update to be observed...
+Waiting for daemon set "node-agent" rollout to finish: 0 of 1 updated pods are available...
+daemon set "node-agent" successfully rolled out
+$ kubectl get pods -l app=node-agent -o wide
+NAME               READY   STATUS    RESTARTS   AGE   IP            NODE       NOMINATED NODE   READINESS GATES
+node-agent-rzb9k   1/1     Running   0          5s    10.244.0.22   minikube   <none>           <none>
+daemonset.apps "node-agent" deleted from default namespace

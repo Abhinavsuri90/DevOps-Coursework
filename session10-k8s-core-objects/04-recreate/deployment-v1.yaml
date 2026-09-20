@@ -1,0 +1,42 @@
+{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {
+    "name": "recreate-demo"
+  },
+  "spec": {
+    "replicas": 3,
+    "selector": {
+      "matchLabels": {
+        "app": "recreate-demo"
+      }
+    },
+    "template": {
+      "metadata": {
+        "labels": {
+          "app": "recreate-demo"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "app",
+            "image": "hashicorp/http-echo:1.0.0",
+            "args": [
+              "-listen=:5678",
+              "-text=v1"
+            ],
+            "ports": [
+              {
+                "containerPort": 5678
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "strategy": {
+      "type": "Recreate"
+    }
+  }
+}

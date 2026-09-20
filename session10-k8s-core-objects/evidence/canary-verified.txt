@@ -1,0 +1,40 @@
+pod/lab-client created
+pod/lab-client condition met
+deployment.apps/canary-release created
+deployment.apps/canary-stable created
+service/canary created
+Waiting for deployment "canary-stable" rollout to finish: 0 out of 9 new replicas have been updated...
+Waiting for deployment "canary-stable" rollout to finish: 0 of 9 updated replicas are available...
+Waiting for deployment "canary-stable" rollout to finish: 1 of 9 updated replicas are available...
+Waiting for deployment "canary-stable" rollout to finish: 2 of 9 updated replicas are available...
+Waiting for deployment "canary-stable" rollout to finish: 3 of 9 updated replicas are available...
+Waiting for deployment "canary-stable" rollout to finish: 4 of 9 updated replicas are available...
+Waiting for deployment "canary-stable" rollout to finish: 5 of 9 updated replicas are available...
+Waiting for deployment "canary-stable" rollout to finish: 6 of 9 updated replicas are available...
+Waiting for deployment "canary-stable" rollout to finish: 7 of 9 updated replicas are available...
+Waiting for deployment "canary-stable" rollout to finish: 8 of 9 updated replicas are available...
+deployment "canary-stable" successfully rolled out
+deployment "canary-release" successfully rolled out
+Ready endpoints:
+canary-release-8496445787-6dslb canary-stable-54c7868d6c-q7rqr canary-stable-54c7868d6c-96p29 canary-stable-54c7868d6c-qvv5p canary-stable-54c7868d6c-79wsp canary-stable-54c7868d6c-rp4bw canary-stable-54c7868d6c-psqrn canary-stable-54c7868d6c-fv5bb canary-stable-54c7868d6c-fzv94 canary-stable-54c7868d6c-lw7m8
+Direct canary IP 10.244.0.63:
+v2
+Service sample 100 requests at 9:1:
+  88 v1
+  12 v2
+deployment.apps/canary-stable scaled
+deployment.apps/canary-release scaled
+deployment "canary-stable" successfully rolled out
+Waiting for deployment "canary-release" rollout to finish: 1 of 3 updated replicas are available...
+Waiting for deployment "canary-release" rollout to finish: 2 of 3 updated replicas are available...
+deployment "canary-release" successfully rolled out
+Ready endpoints after scaling:
+canary-release-8496445787-6dslb canary-stable-54c7868d6c-96p29 canary-stable-54c7868d6c-qvv5p canary-stable-54c7868d6c-79wsp canary-stable-54c7868d6c-rp4bw canary-stable-54c7868d6c-psqrn canary-stable-54c7868d6c-fv5bb canary-stable-54c7868d6c-fzv94 canary-release-8496445787-h8bvf canary-release-8496445787-zhlrx
+Service sample 100 requests at 7:3:
+  73 v1
+  27 v2
+deployment.apps/canary-release scaled
+deployment.apps "canary-release" deleted from default namespace
+deployment.apps "canary-stable" deleted from default namespace
+service "canary" deleted from default namespace
+pod "lab-client" deleted from default namespace

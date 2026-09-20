@@ -1,0 +1,18 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "lifecycle-bad-image",
+    "labels": {
+      "app": "lifecycle-bad-image"
+    }
+  },
+  "spec": {
+    "containers": [
+      {
+        "name": "app",
+        "image": "registry.invalid/coursework/no-image:missing"
+      }
+    ]
+  }
+}

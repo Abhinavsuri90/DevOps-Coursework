@@ -1,0 +1,10 @@
+secret/campus-tls-cert created
+ingress.networking.k8s.io/campus-ingress-tls created
+Portal HTTPS status:
+200
+API HTTPS status and body:
+Hello from Yatri backend
+
+200
+ingress.networking.k8s.io "campus-ingress-tls" deleted from default namespace
+secret "campus-tls-cert" deleted from default namespace

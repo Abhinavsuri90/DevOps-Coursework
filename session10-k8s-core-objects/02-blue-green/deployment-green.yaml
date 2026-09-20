@@ -1,0 +1,41 @@
+{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {
+    "name": "app-green"
+  },
+  "spec": {
+    "replicas": 3,
+    "selector": {
+      "matchLabels": {
+        "app": "blue-green",
+        "slot": "green"
+      }
+    },
+    "template": {
+      "metadata": {
+        "labels": {
+          "app": "blue-green",
+          "slot": "green"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "app",
+            "image": "hashicorp/http-echo:1.0.0",
+            "args": [
+              "-listen=:5678",
+              "-text=v2"
+            ],
+            "ports": [
+              {
+                "containerPort": 5678
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

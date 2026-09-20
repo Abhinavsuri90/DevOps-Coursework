@@ -1,0 +1,127 @@
+deployment.apps/web-app-clusterip created
+pod/curl-client created
+service/web-service-clusterip created
+Waiting for deployment "web-app-clusterip" rollout to finish: 0 of 3 updated replicas are available...
+Waiting for deployment "web-app-clusterip" rollout to finish: 1 of 3 updated replicas are available...
+Waiting for deployment "web-app-clusterip" rollout to finish: 2 of 3 updated replicas are available...
+deployment "web-app-clusterip" successfully rolled out
+pod/curl-client condition met
+ClusterIP and endpoints:
+NAME                    TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)    AGE
+web-service-clusterip   ClusterIP   10.96.144.70   <none>        8080/TCP   1s
+NAME                          ADDRESSTYPE   PORTS   ENDPOINTS                             AGE
+web-service-clusterip-9zqwb   IPv4          80      10.244.0.87,10.244.0.85,10.244.0.88   1s
+Short name:
+<!DOCTYPE html>
+<html>
+<head>
+FQDN:
+<!DOCTYPE html>
+<html>
+<head>
+resolv.conf:
+search default.svc.cluster.local svc.cluster.local cluster.local
+nameserver 10.96.0.10
+options ndots:5
+deployment.apps/web-app-nodeport created
+service/web-service-nodeport created
+Waiting for deployment "web-app-nodeport" rollout to finish: 0 of 2 updated replicas are available...
+Waiting for deployment "web-app-nodeport" rollout to finish: 1 of 2 updated replicas are available...
+deployment "web-app-nodeport" successfully rolled out
+NodePort:
+NAME                   TYPE       CLUSTER-IP     EXTERNAL-IP   PORT(S)        AGE
+web-service-nodeport   NodePort   10.110.52.85   <none>        80:30080/TCP   0s
+Host NodePort probe:
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+  0     0    0     0    0     0      0      0 --:--:--  0:00:01 --:--:--     0
+  0     0    0     0    0     0      0      0 --:--:--  0:00:02 --:--:--     0
+  0     0    0     0    0     0      0      0 --:--:--  0:00:03 --:--:--     0
+  0     0    0     0    0     0      0      0 --:--:--  0:00:04 --:--:--     0
+  0     0    0     0    0     0      0      0 --:--:--  0:00:05 --:--:--     0
+curl: (28) Connection timed out after 5006 milliseconds
+deployment.apps/web-app-loadbalancer created
+service/web-service-loadbalancer created
+Waiting for deployment "web-app-loadbalancer" rollout to finish: 0 of 3 updated replicas are available...
+Waiting for deployment "web-app-loadbalancer" rollout to finish: 1 of 3 updated replicas are available...
+Waiting for deployment "web-app-loadbalancer" rollout to finish: 2 of 3 updated replicas are available...
+deployment "web-app-loadbalancer" successfully rolled out
+LoadBalancer before tunnel:
+NAME                       TYPE           CLUSTER-IP       EXTERNAL-IP   PORT(S)        AGE
+web-service-loadbalancer   LoadBalancer   10.100.142.176   <pending>     80:31317/TCP   1s
+pod/dns-test-client created
+service/external-database-service created
+pod/dns-test-client condition met
+ExternalName:
+NAME                        TYPE           CLUSTER-IP   EXTERNAL-IP      PORT(S)   AGE
+external-database-service   ExternalName   <none>       api.github.com   <none>    1s
+Server:		10.96.0.10
+Address:	10.96.0.10:53
+
+external-database-service.default.svc.cluster.local	canonical name = api.github.com
+
+external-database-service.default.svc.cluster.local	canonical name = api.github.com
+Name:	api.github.com
+Address: 20.207.73.85
+
+statefulset.apps/web-stateful created
+pod/headless-dns-client created
+service/web-service-headless created
+Waiting for 3 pods to be ready...
+Waiting for 2 pods to be ready...
+Waiting for 2 pods to be ready...
+Waiting for 1 pods to be ready...
+Waiting for 1 pods to be ready...
+partitioned roll out complete: 3 new pods have been updated...
+pod/headless-dns-client condition met
+Headless Service:
+NAME                   TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)   AGE
+web-service-headless   ClusterIP   None         <none>        80/TCP    1s
+Server:		10.96.0.10
+Address:	10.96.0.10:53
+
+
+Name:	web-service-headless.default.svc.cluster.local
+Address: 10.244.0.96
+Name:	web-service-headless.default.svc.cluster.local
+Address: 10.244.0.98
+Name:	web-service-headless.default.svc.cluster.local
+Address: 10.244.0.97
+
+Server:		10.96.0.10
+Address:	10.96.0.10:53
+
+
+Name:	web-stateful-0.web-service-headless.default.svc.cluster.local
+Address: 10.244.0.96
+
+<!DOCTYPE html>
+<html>
+<head>
+service/external-legacy-db created
+Selector-free before endpoint:
+Warning: v1 Endpoints is deprecated in v1.33+; use discovery.k8s.io/v1 EndpointSlice
+Error from server (NotFound): endpoints "external-legacy-db" not found
+Warning: v1 Endpoints is deprecated in v1.33+; use discovery.k8s.io/v1 EndpointSlice
+endpoints/external-legacy-db created
+Selector-free after endpoint:
+Warning: v1 Endpoints is deprecated in v1.33+; use discovery.k8s.io/v1 EndpointSlice
+NAME                 ENDPOINTS         AGE
+external-legacy-db   192.0.2.10:3306   0s
+deployment.apps "web-app-clusterip" deleted from default namespace
+pod "curl-client" deleted from default namespace
+service "web-service-clusterip" deleted from default namespace
+deployment.apps "web-app-nodeport" deleted from default namespace
+service "web-service-nodeport" deleted from default namespace
+deployment.apps "web-app-loadbalancer" deleted from default namespace
+service "web-service-loadbalancer" deleted from default namespace
+pod "dns-test-client" deleted from default namespace
+service "external-database-service" deleted from default namespace
+statefulset.apps "web-stateful" deleted from default namespace
+pod "headless-dns-client" deleted from default namespace
+service "web-service-headless" deleted from default namespace
+Warning: v1 Endpoints is deprecated in v1.33+; use discovery.k8s.io/v1 EndpointSlice
+endpoints "external-legacy-db" deleted from default namespace
+service "external-legacy-db" deleted from default namespace

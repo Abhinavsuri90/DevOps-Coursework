@@ -1,0 +1,20 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "headless-dns-client"
+  },
+  "spec": {
+    "containers": [
+      {
+        "name": "client",
+        "image": "busybox:1.36",
+        "command": [
+          "sh",
+          "-c",
+          "sleep 36000"
+        ]
+      }
+    ]
+  }
+}

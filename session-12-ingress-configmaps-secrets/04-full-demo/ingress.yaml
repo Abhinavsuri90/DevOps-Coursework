@@ -1,0 +1,51 @@
+{
+  "apiVersion": "networking.k8s.io/v1",
+  "kind": "Ingress",
+  "metadata": {
+    "name": "yatri-ingress",
+    "labels": {
+      "app": "yatri-app"
+    },
+    "annotations": {
+      "kubernetes.io/ingress.class": "nginx",
+      "nginx.ingress.kubernetes.io/use-regex": "true",
+      "nginx.ingress.kubernetes.io/rewrite-target": "/$2"
+    }
+  },
+  "spec": {
+    "ingressClassName": "nginx",
+    "rules": [
+      {
+        "host": "yatri.local",
+        "http": {
+          "paths": [
+            {
+              "path": "/api(/|$)(.*)",
+              "pathType": "ImplementationSpecific",
+              "backend": {
+                "service": {
+                  "name": "yatri-backend",
+                  "port": {
+                    "number": 80
+                  }
+                }
+              }
+            },
+            {
+              "path": "/()(.*)",
+              "pathType": "ImplementationSpecific",
+              "backend": {
+                "service": {
+                  "name": "yatri-frontend",
+                  "port": {
+                    "number": 80
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

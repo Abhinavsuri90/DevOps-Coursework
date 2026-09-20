@@ -1,0 +1,25 @@
+pod/lab-client created
+pod/lab-client condition met
+deployment.apps/app-blue created
+deployment.apps/app-green created
+Waiting for deployment "app-blue" rollout to finish: 0 of 3 updated replicas are available...
+Waiting for deployment "app-blue" rollout to finish: 1 of 3 updated replicas are available...
+Waiting for deployment "app-blue" rollout to finish: 2 of 3 updated replicas are available...
+deployment "app-blue" successfully rolled out
+deployment "app-green" successfully rolled out
+service/blue-green created
+Blue selector and response:
+{"app":"blue-green","slot":"blue"}
+v1
+service/blue-green configured
+Green selector and response:
+{"app":"blue-green","slot":"green"}
+v2
+service/blue-green configured
+Rollback selector and response:
+{"app":"blue-green","slot":"blue"}
+v1
+service "blue-green" deleted from default namespace
+deployment.apps "app-blue" deleted from default namespace
+deployment.apps "app-green" deleted from default namespace
+pod "lab-client" deleted from default namespace

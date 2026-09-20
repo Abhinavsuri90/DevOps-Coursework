@@ -1,0 +1,37 @@
+* ingress is an addon maintained by Kubernetes. For any concerns contact minikube on GitHub.
+You can view the list of minikube maintainers at: https://github.com/kubernetes/minikube/blob/master/OWNERS
+* After the addon is enabled, please run "minikube tunnel" and your ingress resources would be available at "127.0.0.1"
+  - Using image registry.k8s.io/ingress-nginx/controller:v1.15.1
+  - Using image registry.k8s.io/ingress-nginx/kube-webhook-certgen:v1.6.9
+  - Using image registry.k8s.io/ingress-nginx/kube-webhook-certgen:v1.6.9
+* Verifying ingress addon...
+* The 'ingress' addon is enabled
+Waiting for deployment "ingress-nginx-controller" rollout to finish: 0 of 1 updated replicas are available...
+deployment "ingress-nginx-controller" successfully rolled out
+configmap/yatri-config created
+secret/yatri-demo-secret created
+deployment.apps/yatri-backend created
+service/yatri-backend created
+deployment.apps/yatri-frontend created
+service/yatri-frontend created
+Waiting for deployment "yatri-backend" rollout to finish: 0 of 2 updated replicas are available...
+Waiting for deployment "yatri-backend" rollout to finish: 1 of 2 updated replicas are available...
+deployment "yatri-backend" successfully rolled out
+deployment "yatri-frontend" successfully rolled out
+ingress.networking.k8s.io/yatri-ingress created
+NAME                     DATA   AGE
+configmap/yatri-config   2      17s
+
+NAME                       TYPE     DATA   AGE
+secret/yatri-demo-secret   Opaque   1      17s
+
+NAME                                      CLASS   HOSTS         ADDRESS   PORTS   AGE
+ingress.networking.k8s.io/yatri-ingress   nginx   yatri.local             80      0s
+
+NAME                             READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/yatri-backend    2/2     2            2           17s
+deployment.apps/yatri-frontend   2/2     2            2           17s
+
+NAME                     TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)   AGE
+service/yatri-backend    ClusterIP   10.100.255.77    <none>        80/TCP    17s
+service/yatri-frontend   ClusterIP   10.104.185.138   <none>        80/TCP    17s

@@ -1,0 +1,76 @@
+Ingress controller:
+NAME                                           READY   STATUS      RESTARTS   AGE
+pod/ingress-nginx-admission-create-cw92r       0/1     Completed   0          97s
+pod/ingress-nginx-admission-patch-8xhqq        0/1     Completed   0          97s
+pod/ingress-nginx-controller-d7cd8c989-dw82s   1/1     Running     0          97s
+
+NAME                                         TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)                      AGE
+service/ingress-nginx-controller             NodePort    10.100.54.27     <none>        80:31785/TCP,443:31749/TCP   97s
+service/ingress-nginx-controller-admission   ClusterIP   10.108.105.145   <none>        443/TCP                      97s
+secret/campus-tls-cert created
+ingress.networking.k8s.io/campus-ingress-tls created
+Port forward:
+Forwarding from 127.0.0.1:18080 -> 80
+Forwarding from [::1]:18080 -> 80
+Forwarding from 127.0.0.1:18443 -> 443
+Forwarding from [::1]:18443 -> 443
+Frontend via path Ingress:
+<!DOCTYPE html>
+<html>
+<head>
+Backend via /api rewrite:
+Hello from Yatri backend
+Frontend via virtual host:
+<html>
+<head><title>308 Permanent Redirect</title></head>
+<body>
+Backend via virtual host /api:
+<html>
+<head><title>308 Permanent Redirect</title></head>
+<body>
+<center><h1>308 Permanent Redirect</h1></center>
+<hr><center>nginx</center>
+</body>
+</html>
+TLS handshake and response:
+* SSL connection using TLSv1.3 / AEAD-AES256-GCM-SHA384 / [blank] / UNDEF
+*  subject: CN=campus.local; O=CampusDevOps
+*  issuer: CN=campus.local; O=CampusDevOps
+* using HTTP/2
+* [HTTP/2] [1] OPENED stream for https://portal.campus.local:18443/
+* [HTTP/2] [1] [:method: GET]
+* [HTTP/2] [1] [:scheme: https]
+* [HTTP/2] [1] [:authority: portal.campus.local:18443]
+* [HTTP/2] [1] [:path: /]
+* [HTTP/2] [1] [user-agent: curl/8.7.1]
+* [HTTP/2] [1] [accept: */*]
+> GET / HTTP/2
+< HTTP/2 200
+TLS response first lines:
+<!DOCTYPE html>
+<html>
+<head>
+Hybrid Ingress:
+Name:             campus-ingress-tls
+Labels:           <none>
+Namespace:        default
+Address:
+Ingress Class:    nginx
+Default backend:  <default>
+TLS:
+  campus-tls-cert terminates portal.campus.local,api.campus.local
+Rules:
+  Host                 Path  Backends
+  ----                 ----  --------
+  portal.campus.local
+                       /   yatri-frontend:80 (10.244.0.112:80,10.244.0.113:80)
+  api.campus.local
+                       /api   yatri-backend:80 (10.244.0.111:8080,10.244.0.110:8080)
+                       /      yatri-backend:80 (10.244.0.111:8080,10.244.0.110:8080)
+Annotations:           kubernetes.io/ingress.class: nginx
+Events:
+  Type    Reason  Age   From                      Message
+  ----    ------  ----  ----                      -------
+  Normal  Sync    8s    nginx-ingress-controller  Scheduled for sync
+ingress.networking.k8s.io "campus-ingress-tls" deleted from default namespace
+secret "campus-tls-cert" deleted from default namespace

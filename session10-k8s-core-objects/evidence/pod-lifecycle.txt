@@ -1,0 +1,87 @@
+$ kubectl apply -f pod-lifecycle/
+pod/lifecycle-running created
+pod/lifecycle-pending created
+pod/lifecycle-succeeded created
+pod/lifecycle-failed created
+pod/lifecycle-crashloop created
+pod/lifecycle-bad-image created
+pod/lifecycle-readiness created
+pod/lifecycle-liveness created
+pod/lifecycle-startup created
+pod/lifecycle-init created
+pod/lifecycle-multi created
+pod/lifecycle-termination created
+$ kubectl wait --for=condition=Ready pod/lifecycle-running --timeout=120s
+pod/lifecycle-running condition met
+$ kubectl wait --for=condition=Ready pod/lifecycle-readiness --timeout=120s
+pod/lifecycle-readiness condition met
+$ kubectl wait --for=condition=Ready pod/lifecycle-startup --timeout=120s
+pod/lifecycle-startup condition met
+$ kubectl get pods -o wide
+NAME                    READY   STATUS         RESTARTS      AGE   IP            NODE       NOMINATED NODE   READINESS GATES
+lifecycle-bad-image     0/1     ErrImagePull   0             33s   10.244.0.8    minikube   <none>           <none>
+lifecycle-crashloop     0/1     Error          2 (30s ago)   33s   10.244.0.13   minikube   <none>           <none>
+lifecycle-failed        0/1     Error          0             33s   10.244.0.7    minikube   <none>           <none>
+lifecycle-init          1/1     Running        0             32s   10.244.0.10   minikube   <none>           <none>
+lifecycle-liveness      1/1     Running        0             33s   10.244.0.14   minikube   <none>           <none>
+lifecycle-multi         2/2     Running        0             32s   10.244.0.12   minikube   <none>           <none>
+lifecycle-pending       0/1     Pending        0             33s   <none>        <none>     <none>           <none>
+lifecycle-readiness     1/1     Running        0             33s   10.244.0.9    minikube   <none>           <none>
+lifecycle-running       1/1     Running        0             33s   10.244.0.5    minikube   <none>           <none>
+lifecycle-startup       1/1     Running        0             33s   10.244.0.15   minikube   <none>           <none>
+lifecycle-succeeded     0/1     Completed      0             33s   10.244.0.6    minikube   <none>           <none>
+lifecycle-termination   1/1     Running        0             32s   10.244.0.11   minikube   <none>           <none>
+$ kubectl describe pod lifecycle-pending
+Volumes:
+  kube-api-access-w6h57:
+    Type:                    Projected (a volume that contains injected data from multiple sources)
+    TokenExpirationSeconds:  3607
+    ConfigMapName:           kube-root-ca.crt
+    Optional:                false
+    DownwardAPI:             true
+QoS Class:                   Burstable
+Node-Selectors:              <none>
+Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
+                             node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
+Events:
+  Type     Reason            Age                From               Message
+  ----     ------            ----               ----               -------
+  Warning  FailedScheduling  30s (x3 over 34s)  default-scheduler  0/1 nodes are available: 1 Insufficient cpu, 1 Insufficient memory. preemption: 0/1 nodes are available: 1 Preemption is not helpful for scheduling.
+$ kubectl describe pod lifecycle-bad-image
+    Type:                    Projected (a volume that contains injected data from multiple sources)
+    TokenExpirationSeconds:  3607
+    ConfigMapName:           kube-root-ca.crt
+    Optional:                false
+    DownwardAPI:             true
+QoS Class:                   BestEffort
+Node-Selectors:              <none>
+Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
+                             node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
+Events:
+  Type     Reason     Age                From               Message
+  ----     ------     ----               ----               -------
+  Normal   Scheduled  34s                default-scheduler  Successfully assigned default/lifecycle-bad-image to minikube
+  Normal   Pulling    20s (x2 over 33s)  kubelet            spec.containers{app}: Pulling image "registry.invalid/coursework/no-image:missing"
+  Warning  Failed     20s (x2 over 32s)  kubelet            spec.containers{app}: Failed to pull image "registry.invalid/coursework/no-image:missing": failed to pull and unpack image "registry.invalid/coursework/no-image:missing": failed to resolve reference "registry.invalid/coursework/no-image:missing": failed to do request: Head "https://registry.invalid/v2/coursework/no-image/manifests/missing": dial tcp: lookup registry.invalid on 192.168.5.2:53: no such host
+  Warning  Failed     20s (x2 over 32s)  kubelet            spec.containers{app}: Error: ErrImagePull
+  Normal   BackOff    6s (x2 over 31s)   kubelet            spec.containers{app}: Back-off pulling image "registry.invalid/coursework/no-image:missing"
+  Warning  Failed     6s (x2 over 31s)   kubelet            spec.containers{app}: Error: ImagePullBackOff
+$ kubectl logs lifecycle-multi -c sidecar
+Sun Sep 20 16:06:33 UTC 2026
+Sun Sep 20 16:06:38 UTC 2026
+Sun Sep 20 16:06:43 UTC 2026
+Sun Sep 20 16:06:48 UTC 2026
+Sun Sep 20 16:06:53 UTC 2026
+$ kubectl delete -f pod-lifecycle/
+pod "lifecycle-running" deleted from default namespace
+pod "lifecycle-pending" deleted from default namespace
+pod "lifecycle-succeeded" deleted from default namespace
+pod "lifecycle-failed" deleted from default namespace
+pod "lifecycle-crashloop" deleted from default namespace
+pod "lifecycle-bad-image" deleted from default namespace
+pod "lifecycle-readiness" deleted from default namespace
+pod "lifecycle-liveness" deleted from default namespace
+pod "lifecycle-startup" deleted from default namespace
+pod "lifecycle-init" deleted from default namespace
+pod "lifecycle-multi" deleted from default namespace
+pod "lifecycle-termination" deleted from default namespace

@@ -1,0 +1,30 @@
+{
+  "apiVersion": "apps/v1",
+  "kind": "ReplicaSet",
+  "metadata": {
+    "name": "course-rs"
+  },
+  "spec": {
+    "replicas": 3,
+    "selector": {
+      "matchLabels": {
+        "app": "course-rs"
+      }
+    },
+    "template": {
+      "metadata": {
+        "labels": {
+          "app": "course-rs"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "nginx",
+            "image": "nginx:1.27"
+          }
+        ]
+      }
+    }
+  }
+}

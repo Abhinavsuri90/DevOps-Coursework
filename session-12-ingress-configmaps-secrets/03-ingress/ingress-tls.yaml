@@ -1,0 +1,74 @@
+{
+  "apiVersion": "networking.k8s.io/v1",
+  "kind": "Ingress",
+  "metadata": {
+    "name": "campus-ingress-tls",
+    "annotations": {
+      "kubernetes.io/ingress.class": "nginx"
+    }
+  },
+  "spec": {
+    "ingressClassName": "nginx",
+    "tls": [
+      {
+        "hosts": [
+          "portal.campus.local",
+          "api.campus.local"
+        ],
+        "secretName": "campus-tls-cert"
+      }
+    ],
+    "rules": [
+      {
+        "host": "portal.campus.local",
+        "http": {
+          "paths": [
+            {
+              "path": "/",
+              "pathType": "Prefix",
+              "backend": {
+                "service": {
+                  "name": "yatri-frontend",
+                  "port": {
+                    "number": 80
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "host": "api.campus.local",
+        "http": {
+          "paths": [
+            {
+              "path": "/api",
+              "pathType": "Prefix",
+              "backend": {
+                "service": {
+                  "name": "yatri-backend",
+                  "port": {
+                    "number": 80
+                  }
+                }
+              }
+            },
+            {
+              "path": "/",
+              "pathType": "Prefix",
+              "backend": {
+                "service": {
+                  "name": "yatri-backend",
+                  "port": {
+                    "number": 80
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

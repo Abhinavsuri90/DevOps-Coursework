@@ -1,0 +1,94 @@
+{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {
+    "name": "yatri-backend",
+    "labels": {
+      "app": "yatri-app"
+    }
+  },
+  "spec": {
+    "replicas": 2,
+    "selector": {
+      "matchLabels": {
+        "app": "yatri-backend"
+      }
+    },
+    "template": {
+      "metadata": {
+        "labels": {
+          "app": "yatri-backend"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "backend",
+            "image": "python:3.12-alpine",
+            "command": [
+              "python",
+              "-u",
+              "-c",
+              "import os\nfrom http.server import BaseHTTPRequestHandler, HTTPServer\nclass Handler(BaseHTTPRequestHandler):\n    def do_GET(self):\n        body = (os.environ[\"APP_MESSAGE\"] + \"\\n\").encode()\n        self.send_response(200)\n        self.send_header(\"Content-Type\", \"text/plain\")\n        self.send_header(\"Content-Length\", str(len(body)))\n        self.end_headers()\n        self.wfile.write(body)\nHTTPServer((\"0.0.0.0\", 8080), Handler).serve_forever()"
+            ],
+            "ports": [
+              {
+                "containerPort": 8080
+              }
+            ],
+            "envFrom": [
+              {
+                "configMapRef": {
+                  "name": "yatri-config"
+                }
+              }
+            ],
+            "env": [
+              {
+                "name": "DB_PASSWORD",
+                "valueFrom": {
+                  "secretKeyRef": {
+                    "name": "yatri-demo-secret",
+                    "key": "db-password"
+                  }
+                }
+              }
+            ],
+            "readinessProbe": {
+              "httpGet": {
+                "path": "/",
+                "port": 8080
+              },
+              "initialDelaySeconds": 2,
+              "periodSeconds": 5
+            }
+          }
+        ]
+      }
+    }
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "Service",
+  "metadata": {
+    "name": "yatri-backend",
+    "labels": {
+      "app": "yatri-app"
+    }
+  },
+  "spec": {
+    "type": "ClusterIP",
+    "selector": {
+      "app": "yatri-backend"
+    },
+    "ports": [
+      {
+        "name": "http",
+        "port": 80,
+        "targetPort": 8080
+      }
+    ]
+  }
+}

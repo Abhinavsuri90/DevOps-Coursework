@@ -1,0 +1,21 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "hello"
+  },
+  "spec": {
+    "restartPolicy": "Never",
+    "containers": [
+      {
+        "name": "hello",
+        "image": "busybox:1.36",
+        "command": [
+          "sh",
+          "-c",
+          "echo hello; sleep 5"
+        ]
+      }
+    ]
+  }
+}

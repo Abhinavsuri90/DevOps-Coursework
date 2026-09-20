@@ -1,0 +1,24 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "lifecycle-termination",
+    "labels": {
+      "app": "lifecycle-termination"
+    }
+  },
+  "spec": {
+    "containers": [
+      {
+        "name": "app",
+        "image": "busybox:1.36",
+        "command": [
+          "sh",
+          "-c",
+          "trap \"echo SIGTERM received; sleep 5; exit 0\" TERM; while true; do sleep 1 & wait $!; done"
+        ]
+      }
+    ],
+    "terminationGracePeriodSeconds": 20
+  }
+}
