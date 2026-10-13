@@ -1,0 +1,85 @@
+# Basic objects: namespaced resources in the core API group, and the apps group
+$ kubectl api-resources --api-group='' --namespaced=true
+NAME                     SHORTNAMES   APIVERSION   NAMESPACED   KIND
+bindings                              v1           true         Binding
+configmaps               cm           v1           true         ConfigMap
+endpoints                ep           v1           true         Endpoints
+events                   ev           v1           true         Event
+limitranges              limits       v1           true         LimitRange
+persistentvolumeclaims   pvc          v1           true         PersistentVolumeClaim
+pods                     po           v1           true         Pod
+podtemplates                          v1           true         PodTemplate
+replicationcontrollers   rc           v1           true         ReplicationController
+resourcequotas           quota        v1           true         ResourceQuota
+secrets                               v1           true         Secret
+serviceaccounts          sa           v1           true         ServiceAccount
+services                 svc          v1           true         Service
+$ kubectl api-resources --api-group=apps
+NAME                  SHORTNAMES   APIVERSION   NAMESPACED   KIND
+controllerrevisions                apps/v1      true         ControllerRevision
+daemonsets            ds           apps/v1      true         DaemonSet
+deployments           deploy       apps/v1      true         Deployment
+replicasets           rs           apps/v1      true         ReplicaSet
+statefulsets          sts          apps/v1      true         StatefulSet
+# Built-in documentation for any field
+$ kubectl explain deployment.spec.replicas
+GROUP:      apps
+KIND:       Deployment
+VERSION:    v1
+
+FIELD: replicas <integer>
+
+
+DESCRIPTION:
+    Number of desired pods. This is a pointer to distinguish between explicit
+    zero and not specified. Defaults to 1.
+    
+
+$ kubectl explain service.spec.type | head -12
+KIND:       Service
+VERSION:    v1
+
+FIELD: type <string>
+ENUM:
+    ClusterIP
+    ExternalName
+    LoadBalancer
+    NodePort
+
+DESCRIPTION:
+    type determines how the Service is exposed. Defaults to ClusterIP. Valid
+# Namespaces and everything running in the cluster
+$ kubectl get namespaces
+NAME              STATUS   AGE
+default           Active   3h26m
+ingress-nginx     Active   3h26m
+kube-node-lease   Active   3h26m
+kube-public       Active   3h26m
+kube-system       Active   3h26m
+$ kubectl get all -n kube-system
+NAME                                   READY   STATUS    RESTARTS   AGE
+pod/coredns-559f6c778d-kpt82           1/1     Running   0          33m
+pod/etcd-minikube                      1/1     Running   0          3h26m
+pod/kindnet-jgj7h                      1/1     Running   0          3h26m
+pod/kube-apiserver-minikube            1/1     Running   0          3h26m
+pod/kube-controller-manager-minikube   1/1     Running   0          3h26m
+pod/kube-proxy-wn9zb                   1/1     Running   0          3h26m
+pod/kube-scheduler-minikube            1/1     Running   0          3h26m
+pod/metrics-server-768f9f6999-k4dpg    1/1     Running   0          3h26m
+pod/storage-provisioner                1/1     Running   0          3h26m
+
+NAME                     TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)                  AGE
+service/kube-dns         ClusterIP   10.96.0.10     <none>        53/UDP,53/TCP,9153/TCP   3h26m
+service/metrics-server   ClusterIP   10.111.175.9   <none>        443/TCP                  3h26m
+
+NAME                        DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR            AGE
+daemonset.apps/kindnet      1         1         1       1            1           <none>                   3h26m
+daemonset.apps/kube-proxy   1         1         1       1            1           kubernetes.io/os=linux   3h26m
+
+NAME                             READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/coredns          1/1     1            1           3h26m
+deployment.apps/metrics-server   1/1     1            1           3h26m
+
+NAME                                        DESIRED   CURRENT   READY   AGE
+replicaset.apps/coredns-559f6c778d          1         1         1       3h26m
+replicaset.apps/metrics-server-768f9f6999   1         1         1       3h26m
