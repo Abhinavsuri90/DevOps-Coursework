@@ -1,0 +1,201 @@
+# Ubuntu 24.04 container (docker run -it --hostname linux-lab ubuntu:24.04 bash), commands run as root
+$ grep PRETTY_NAME /etc/os-release
+PRETTY_NAME="Ubuntu 24.04.5 LTS"
+# Task 1 - soft link vs hard link
+$ echo "DevOps link practice" > original.txt
+$ ln -s original.txt soft-link.txt
+$ ln original.txt hard-link.txt
+$ ls -li
+total 8
+662917 -rw-r--r-- 2 root root 21 Oct 13 10:43 hard-link.txt
+662917 -rw-r--r-- 2 root root 21 Oct 13 10:43 original.txt
+662918 lrwxrwxrwx 1 root root 12 Oct 13 10:43 soft-link.txt -> original.txt
+$ stat -c "%n  inode=%i  links=%h  type=%F" original.txt hard-link.txt soft-link.txt
+original.txt  inode=662917  links=2  type=regular file
+hard-link.txt  inode=662917  links=2  type=regular file
+soft-link.txt  inode=662918  links=1  type=symbolic link
+$ readlink -f soft-link.txt
+/root/links-lab/original.txt
+# Delete the original: the hard link still has the data, the soft link now dangles
+$ rm original.txt
+$ ls -li
+total 4
+662917 -rw-r--r-- 1 root root 21 Oct 13 10:43 hard-link.txt
+662918 lrwxrwxrwx 1 root root 12 Oct 13 10:43 soft-link.txt -> original.txt
+$ cat hard-link.txt
+DevOps link practice
+$ cat soft-link.txt
+cat: soft-link.txt: No such file or directory
+$ find . -xtype l
+./soft-link.txt
+# Repoint the soft link, then clean up
+$ ln -sf hard-link.txt soft-link.txt && cat soft-link.txt
+DevOps link practice
+$ rm soft-link.txt hard-link.txt && ls -la
+total 8
+drwxr-xr-x 2 root root 4096 Oct 13 10:43 .
+drwx------ 1 root root 4096 Oct 13 10:43 ..
+# Directories: soft links work, hard links are not allowed
+$ ln -s /etc /root/etc-soft && ls -ld /root/etc-soft
+lrwxrwxrwx 1 root root 4 Oct 13 10:43 /root/etc-soft -> /etc
+$ ln /etc /root/etc-hard
+ln: /etc: hard link not allowed for directory
+# Task 2 - useradd vs adduser (fresh ubuntu:24.04 container; apt-get update was run first to refresh package lists)
+# The minimal ubuntu image ships only the low-level tools; full Ubuntu installs include adduser
+$ command -v useradd adduser || true
+/usr/sbin/useradd
+$ apt-get install -y -qq adduser > /dev/null && command -v adduser deluser && dpkg -s adduser | grep -E "^(Package|Version)"
+debconf: delaying package configuration, since apt-utils is not installed
+/usr/sbin/adduser
+/usr/sbin/deluser
+Package: adduser
+Version: 3.137ubuntu1
+# useradd: low-level binary, uses defaults from /etc/default/useradd and /etc/login.defs
+$ useradd -D
+GROUP=100
+HOME=/home
+INACTIVE=-1
+EXPIRE=
+SHELL=/bin/sh
+SKEL=/etc/skel
+CREATE_MAIL_SPOOL=no
+LOG_INIT=yes
+$ useradd demo-useradd
+$ getent passwd demo-useradd
+demo-useradd:x:1001:1001::/home/demo-useradd:/bin/sh
+$ ls -ld /home/demo-useradd
+ls: cannot access '/home/demo-useradd': No such file or directory
+$ passwd -S demo-useradd
+demo-useradd L 2026-10-13 0 99999 7 -1
+# adduser: Debian/Ubuntu Perl front end - creates home, copies /etc/skel, sets bash, creates group (recommended for humans)
+$ adduser --disabled-password --comment "Coursework User" coursework-user
+info: Adding user `coursework-user' ...
+info: Selecting UID/GID from range 1000 to 59999 ...
+info: Adding new group `coursework-user' (1002) ...
+info: Adding new user `coursework-user' (1002) with group `coursework-user (1002)' ...
+info: Creating home directory `/home/coursework-user' ...
+info: Copying files from `/etc/skel' ...
+info: Adding new user `coursework-user' to supplemental / extra groups `users' ...
+info: Adding user `coursework-user' to group `users' ...
+$ getent passwd coursework-user
+coursework-user:x:1002:1002:Coursework User,,,:/home/coursework-user:/bin/bash
+$ id coursework-user
+uid=1002(coursework-user) gid=1002(coursework-user) groups=1002(coursework-user),100(users)
+$ ls -la /home/coursework-user
+total 20
+drwxr-x--- 2 coursework-user coursework-user 4096 Oct 13 10:45 .
+drwxr-xr-x 1 root            root            4096 Oct 13 10:45 ..
+-rw-r--r-- 1 coursework-user coursework-user  220 Oct 13 10:45 .bash_logout
+-rw-r--r-- 1 coursework-user coursework-user 3771 Oct 13 10:45 .bashrc
+-rw-r--r-- 1 coursework-user coursework-user  807 Oct 13 10:45 .profile
+# Clean up both test users (deluser --remove-home needs perl, which this minimal image lacks; userdel -r does the same job)
+$ userdel -r coursework-user
+userdel: coursework-user mail spool (/var/mail/coursework-user) not found
+$ userdel demo-useradd
+$ getent passwd coursework-user || echo "coursework-user: removed"
+coursework-user: removed
+$ getent passwd demo-useradd || echo "demo-useradd: removed"
+demo-useradd: removed
+# Task 3 - journalctl (run on the Minikube node, a Debian 12 machine with systemd as PID 1, via "docker exec -it minikube bash")
+$ grep PRETTY_NAME /etc/os-release; ps -p 1 -o pid=,comm=
+PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"
+      1 systemd
+# Services managed by systemd, and the status of one service
+$ systemctl list-units --type=service --state=running --no-pager --no-legend | head -8
+  containerd.service       loaded active running containerd container runtime
+  dbus.service             loaded active running D-Bus System Message Bus
+  kubelet.service          loaded active running kubelet: The Kubernetes Node Agent
+  ssh.service              loaded active running OpenBSD Secure Shell server
+  systemd-journald.service loaded active running Journal Service
+$ systemctl status kubelet --no-pager | head -9
+● kubelet.service - kubelet: The Kubernetes Node Agent
+     Loaded: loaded (/lib/systemd/system/kubelet.service; disabled; preset: enabled)
+    Drop-In: /etc/systemd/system/kubelet.service.d
+             └─10-kubeadm.conf
+     Active: active (running) since Tue 2026-10-13 07:12:14 UTC; 3h 36min ago
+       Docs: http://kubernetes.io/docs/
+   Main PID: 3261 (kubelet)
+      Tasks: 22 (limit: 4699)
+     Memory: 63.2M
+# Logs for one service (-u), newest N lines (-n)
+$ journalctl -u kubelet --no-pager -n 5 | cut -c1-180
+Oct 13 10:38:31 minikube kubelet[3261]: I1013 10:38:31.028489    3261 scope.go:118] "RemoveContainer" containerID="a9320c51bcce30b09f71a3591cb977555d696a5e45f251e6cfeede5dd9cd0727"
+Oct 13 10:38:31 minikube kubelet[3261]: E1013 10:38:31.029742    3261 remote_runtime.go:657] "ContainerStatus from runtime service failed" err="rpc error: code = NotFound desc = an
+Oct 13 10:38:31 minikube kubelet[3261]: I1013 10:38:31.029799    3261 pod_container_deletor.go:56] "DeleteContainer returned error" containerID={"Type":"containerd","ID":"a9320c51b
+Oct 13 10:38:32 minikube kubelet[3261]: I1013 10:38:32.240588    3261 kubelet_volumes.go:161] "Cleaned up orphaned pod volumes dir" podUID="b662570a-904a-481c-ae64-302c7f6f5c7c" pa
+Oct 13 10:38:32 minikube kubelet[3261]: I1013 10:38:32.241353    3261 kubelet_volumes.go:161] "Cleaned up orphaned pod volumes dir" podUID="deae7214-a668-48b3-9ee2-9005532a2d0a" pa
+# Time filter and output format
+$ journalctl -u containerd --since "15 min ago" --no-pager -o short-iso | tail -4 | cut -c1-180
+2026-10-13T10:43:43+0000 minikube containerd[640]: time="2026-10-13T10:43:43.778137716Z" level=info msg="container event discarded" container=d1d282c15d0821f48e92797c78b7b73a4fcff6
+2026-10-13T10:43:43+0000 minikube containerd[640]: time="2026-10-13T10:43:43.790633007Z" level=info msg="container event discarded" container=dd6a0971165fd3779c76466161e50ef47a3615
+2026-10-13T10:43:43+0000 minikube containerd[640]: time="2026-10-13T10:43:43.804095007Z" level=info msg="container event discarded" container=babdd2060860eac7e8f55be543d137bcc7caaf
+2026-10-13T10:43:43+0000 minikube containerd[640]: time="2026-10-13T10:43:43.817899007Z" level=info msg="container event discarded" container=9c12ba4db57a5459876f4a6fe1fffb47fa1f35
+# Priority filter: errors and worse since boot
+$ journalctl -p err -b --no-pager | tail -4 | cut -c1-180
+Oct 13 10:37:13 minikube sshd[17302]: pam_env(sshd:session): Unable to open env file: /etc/default/locale: No such file or directory
+Oct 13 10:37:14 minikube sshd[17317]: pam_env(sshd:session): Unable to open env file: /etc/default/locale: No such file or directory
+Oct 13 10:38:13 minikube sshd[16951]: error: connect_to 10.99.166.59 port 8080: failed.
+Oct 13 10:46:07 minikube sshd[19114]: pam_env(sshd:session): Unable to open env file: /etc/default/locale: No such file or directory
+# Boots, disk usage, and follow mode (-f stopped after 5 seconds)
+$ journalctl --list-boots --no-pager | tail -2
+IDX BOOT ID                          FIRST ENTRY                 LAST ENTRY
+  0 cd928c0128c04ceca4865a687353044c Tue 2026-10-13 06:11:32 UTC Tue 2026-10-13 10:48:22 UTC
+$ journalctl --disk-usage
+Archived and active journals take up 8.0M in the file system.
+$ timeout 5 journalctl -u kubelet -f --no-pager -n 2 | cut -c1-180; echo "(follow stopped by timeout)"
+Oct 13 10:38:32 minikube kubelet[3261]: I1013 10:38:32.240588    3261 kubelet_volumes.go:161] "Cleaned up orphaned pod volumes dir" podUID="b662570a-904a-481c-ae64-302c7f6f5c7c" pa
+Oct 13 10:38:32 minikube kubelet[3261]: I1013 10:38:32.241353    3261 kubelet_volumes.go:161] "Cleaned up orphaned pod volumes dir" podUID="deae7214-a668-48b3-9ee2-9005532a2d0a" pa
+(follow stopped by timeout)
+# Task 4 - cheat sheet practice (Ubuntu 24.04 container)
+$ whoami && hostname && pwd && uname -sr
+root
+linux-lab
+/root
+Linux 6.12.76-linuxkit
+$ mkdir -p demo/sub && touch demo/file.txt && cp demo/file.txt demo/copy.txt && mv demo/copy.txt demo/sub/moved.txt && ls -R demo
+demo:
+file.txt
+sub
+
+demo/sub:
+moved.txt
+$ printf "alpha\nbeta\ngamma\n" > demo/words.txt && cat demo/words.txt && grep -n beta demo/words.txt && wc -l demo/words.txt
+alpha
+beta
+gamma
+2:beta
+3 demo/words.txt
+$ chmod 750 demo/file.txt && chown nobody:nogroup demo/file.txt && ls -l demo/file.txt
+-rwxr-x--- 1 nobody nogroup 0 Oct 13 10:48 demo/file.txt
+$ find demo -type f -name "*.txt"
+demo/sub/moved.txt
+demo/words.txt
+demo/file.txt
+$ tar -czf demo.tar.gz demo && tar -tzf demo.tar.gz
+demo/
+demo/sub/
+demo/sub/moved.txt
+demo/words.txt
+demo/file.txt
+$ df -h / && du -sh demo && free -h
+Filesystem      Size  Used Avail Use% Mounted on
+overlay         453G   32G  398G   8% /
+12K	demo
+               total        used        free      shared  buff/cache   available
+Mem:           3.8Gi       1.6Gi       184Mi        10Mi       2.2Gi       2.2Gi
+Swap:          1.0Gi       268Ki       1.0Gi
+$ sleep 300 & pgrep -a sleep; kill %1; sleep 1; pgrep -a sleep || echo "sleep process killed"
+1 sleep infinity
+273 sleep 300
+1 sleep infinity
+$ ps aux | head -4
+USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
+root           1  0.0  0.0   2272  1220 ?        Ss   10:45   0:00 sleep infinity
+root         244  4.3  0.0   4552  3580 ?        Ss   10:48   0:00 bash -s
+root         277  200  0.0   7632  3644 ?        R    10:48   0:00 ps aux
+$ head -3 /etc/passwd && tail -1 /etc/group
+root:x:0:0:root:/root:/bin/bash
+daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+bin:x:2:2:bin:/bin:/usr/sbin/nologin
+ubuntu:x:1000:
+$ rm -rf demo demo.tar.gz && ls
