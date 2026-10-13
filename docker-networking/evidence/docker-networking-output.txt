@@ -1,29 +1,122 @@
-==========================================
-    DOCKER NETWORKING & VOLUME DEMO       
-==========================================
---- Task 1: Container Networking ---
-Creating 3 user-defined bridge networks...
-docker network create frontend-net
-docker network create app-net
-docker network create database-net
+# Task 1 - three containers on three user-defined bridge networks
+$ docker network create frontend-net
+a91749f9c70ed9c42256652029e85f736cf115fb45d2b9b0f4e0cbe7eff6f629
+$ docker network create app-net
+24f31960b0c9c4f5b900b46093b2109c0ccf5d087f0712abab8d760f6ed55f3a
+$ docker network create database-net
+74e71d797595659a651143a578826cc4079e6f0eb64026c3ae8c90d9e5ca66fb
+$ docker run -d --name frontend --network frontend-net nginx:alpine
+d0e7ef007599ac65ae68226ff1504f83a9bf9983eb412e10f204641005ab8bf8
+$ docker run -d --name backend --network app-net nginx:alpine
+81aead0218c01e0872c9865118319e6100f7b9edc084c5a466eaf81e118b3faa
+$ docker run -d --name database --network database-net -e MYSQL_RANDOM_ROOT_PASSWORD=yes mysql:8.0
+e2dc3599f622c7184235de3fb2511d90aaf2bae2825f78206defba2b6059cea6
+# Add the backend to a second network so it can reach the database
+$ docker network connect database-net backend
+$ docker inspect backend --format '{{range $net, $cfg := .NetworkSettings.Networks}}{{$net}}={{$cfg.IPAddress}} {{end}}'
+app-net=172.20.0.2 database-net=172.21.0.3 
+# Wait for MySQL to accept connections on 3306
+# Connectivity: backend <-> database share database-net
+$ docker exec backend ping -c 2 database
+PING database (172.21.0.2): 56 data bytes
+64 bytes from 172.21.0.2: seq=0 ttl=64 time=0.454 ms
+64 bytes from 172.21.0.2: seq=1 ttl=64 time=0.216 ms
 
-Deploying 3 isolated containers...
-docker run -d --name coursework-frontend --network frontend-net alpine sleep 3600
-docker run -d --name coursework-backend --network app-net alpine sleep 3600
-docker run -d --name coursework-database --network database-net -e MYSQL_ROOT_PASSWORD=secret mysql:8.0
+--- database ping statistics ---
+2 packets transmitted, 2 packets received, 0% packet loss
+round-trip min/avg/max = 0.216/0.335/0.454 ms
+$ docker exec backend nc -zv -w 3 database 3306
+database (172.21.0.2:3306) open
+# Connectivity: frontend has no shared network with backend or database yet
+$ docker exec frontend ping -c 2 -W 2 backend
+ping: bad address 'backend'
+(exit code 1)
+$ docker exec frontend ping -c 2 -W 2 database
+ping: bad address 'database'
+(exit code 1)
+# Connect the frontend to app-net, then frontend -> backend works; frontend -> database stays isolated
+$ docker network connect app-net frontend
+$ docker exec frontend ping -c 2 backend
+PING backend (172.20.0.2): 56 data bytes
+64 bytes from 172.20.0.2: seq=0 ttl=64 time=0.525 ms
+64 bytes from 172.20.0.2: seq=1 ttl=64 time=0.392 ms
 
-Connecting backend container to database-net...
-docker network connect database-net coursework-backend
-docker network connect app-net coursework-frontend
-
---- Task 2: Host Network Mode ---
-docker run -d --name coursework-host-apache --network host httpd:2.4-alpine
-curl http://localhost:80
-
---- Task 3: Bind Mount Verification ---
-Initial file content in html-data/index.html: Hello students
-docker run -d --name coursework-bind-nginx -p 8090:80 -v /Users/abhinavsuri/Desktop/DevOps-Coursework/docker-networking/html-data:/usr/share/nginx/html:ro nginx:alpine
-curl http://localhost:8090
-
-Updating index.html live on host to: Hello students - Updated live!
-curl http://localhost:8090
+--- backend ping statistics ---
+2 packets transmitted, 2 packets received, 0% packet loss
+round-trip min/avg/max = 0.392/0.458/0.525 ms
+$ docker exec frontend wget -qO- http://backend | grep -o '<title>.*</title>'
+<title>Welcome to nginx!</title>
+$ docker exec frontend ping -c 2 -W 2 database
+ping: bad address 'database'
+(exit code 1)
+# Who is on which network
+$ docker network inspect frontend-net --format '{{.Name}} ({{range .IPAM.Config}}{{.Subnet}}{{end}}): {{range .Containers}}{{.Name}} {{end}}'
+frontend-net (172.19.0.0/16): frontend 
+$ docker network inspect app-net --format '{{.Name}} ({{range .IPAM.Config}}{{.Subnet}}{{end}}): {{range .Containers}}{{.Name}} {{end}}'
+app-net (172.20.0.0/16): backend frontend 
+$ docker network inspect database-net --format '{{.Name}} ({{range .IPAM.Config}}{{.Subnet}}{{end}}): {{range .Containers}}{{.Name}} {{end}}'
+database-net (172.21.0.0/16): backend database 
+# Task 2 - Apache2 (official httpd image) on the host network
+$ docker run -d --name apache-host --network host httpd:2.4
+2d32b99457e4b5b00775597762a6eed2d7736338aabf68f9aa7040d624161053
+$ docker inspect apache-host --format 'NetworkMode={{.HostConfig.NetworkMode}} PortBindings={{json .HostConfig.PortBindings}}'
+NetworkMode=host PortBindings={}
+# No -p mapping: Apache binds port 80 directly in the Docker host's network namespace
+$ docker run --rm --network host alpine:3.20 wget -qO- http://localhost:80
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+<head>
+<title>It works! Apache httpd</title>
+</head>
+<body>
+<p>It works!</p>
+</body>
+</html>
+# From macOS itself (Docker Desktop runs the Docker host inside a VM)
+$ curl -s -m 5 http://localhost:80
+(exit code 7)
+# Task 3 - bind mount html-data/ into nginx
+$ cat html-data/index.html
+<!DOCTYPE html>
+<html>
+<head><title>Bind Mount Demo</title></head>
+<body>
+  <h1>Hello students</h1>
+</body>
+</html>
+$ docker run -d --name bind-nginx -p 8090:80 -v "/Users/abhinavsuri/Desktop/DevOps-Coursework/docker-networking/html-data":/usr/share/nginx/html:ro nginx:alpine
+94c00549159c4da7a956d94685eecc0aa30c50aed365a8dd48a9ea7062125bb0
+$ curl -s http://localhost:8090
+<!DOCTYPE html>
+<html>
+<head><title>Bind Mount Demo</title></head>
+<body>
+  <h1>Hello students</h1>
+</body>
+</html>
+$ docker inspect bind-nginx --format 'Started={{.State.StartedAt}} Restarts={{.RestartCount}}'
+Started=2026-10-13T10:56:47.999466301Z Restarts=0
+# Edit the file on the host while the container keeps running
+$ sed -i '' 's#<h1>Hello students</h1>#<h1>Hello students - updated live on the host!</h1>#' html-data/index.html
+$ curl -s http://localhost:8090
+<!DOCTYPE html>
+<html>
+<head><title>Bind Mount Demo</title></head>
+<body>
+  <h1>Hello students - updated live on the
+$ docker inspect bind-nginx --format 'Started={{.State.StartedAt}} Restarts={{.RestartCount}}'
+Started=2026-10-13T10:56:47.999466301Z Restarts=0
+# The first request right after the edit was cut at the old length: Docker Desktop's file sharing briefly cached the old size. A few seconds later:
+$ curl -s http://localhost:8090
+<!DOCTYPE html>
+<html>
+<head><title>Bind Mount Demo</title></head>
+<body>
+  <h1>Hello students - updated live on the host!</h1>
+</body>
+</html>
+$ curl -sI http://localhost:8090 | grep -i content-length; wc -c < html-data/index.html
+Content-Length: 144
+     144
+$ docker inspect bind-nginx --format 'Started={{.State.StartedAt}} Restarts={{.RestartCount}}'
+Started=2026-10-13T10:56:47.999466301Z Restarts=0

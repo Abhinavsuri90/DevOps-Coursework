@@ -1,0 +1,32 @@
+# Task 4 - overlay network hands-on on a single-node swarm (Docker Desktop)
+$ docker swarm init 2>&1 | head -2
+Swarm initialized: current node (l4ktw1jwnpgq5hc8hppc79p5q) is now a manager.
+
+$ docker network create -d overlay --attachable demo-overlay
+oqwy9ji6cp7ie9hylokkylij4
+$ docker network inspect demo-overlay --format 'name={{.Name}} driver={{.Driver}} scope={{.Scope}} subnet={{range .IPAM.Config}}{{.Subnet}}{{end}} vxlan_id={{index .Options "com.docker.network.driver.overlay.vxlanid_list"}}'
+name=demo-overlay driver=overlay scope=swarm subnet=10.0.1.0/24 vxlan_id=4097
+$ docker run -d --name overlay-a --network demo-overlay alpine:3.20 sleep 300
+db2ad7f38f97a8191a8a003172e26b8f79866b398d521fa87084baa5c9ce71b2
+$ docker run -d --name overlay-b --network demo-overlay alpine:3.20 sleep 300
+7b412e89b9df4a55cf1b134c472cdfc4baff43354519bc030b7996ff107f49ef
+$ docker exec overlay-a ping -c 2 overlay-b
+PING overlay-b (10.0.1.4): 56 data bytes
+64 bytes from 10.0.1.4: seq=0 ttl=64 time=1.652 ms
+64 bytes from 10.0.1.4: seq=1 ttl=64 time=0.569 ms
+
+--- overlay-b ping statistics ---
+2 packets transmitted, 2 packets received, 0% packet loss
+round-trip min/avg/max = 0.569/1.110/1.652 ms
+$ docker network ls --filter driver=overlay
+NETWORK ID     NAME           DRIVER    SCOPE
+oqwy9ji6cp7i   demo-overlay   overlay   swarm
+bmc3075mqzdc   ingress        overlay   swarm
+# Cleanup: remove containers and network, leave the swarm
+$ docker rm -f overlay-a overlay-b
+overlay-a
+overlay-b
+$ docker network rm demo-overlay
+demo-overlay
+$ docker swarm leave --force
+Node left the swarm.
