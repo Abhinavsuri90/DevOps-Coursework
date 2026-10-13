@@ -1,0 +1,4 @@
+{{ .Chart.Name }} revision {{ .Release.Revision }} is deployed as release "{{ .Release.Name }}".
+Page message: {{ .Values.message }}
+Test it from inside the cluster:
+  kubectl run web-check --rm -i --restart=Never --image=busybox:1.36 -- wget -qO- http://{{ include "web-release.fullname" . }}

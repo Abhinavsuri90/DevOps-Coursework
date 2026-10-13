@@ -1,0 +1,14 @@
+# Development defaults
+replicaCount: 1
+
+image:
+  repository: nginx
+  tag: 1.26-alpine
+
+service:
+  port: 80
+  nodePort: 30090
+
+app:
+  name: notes-app
+  environment: development

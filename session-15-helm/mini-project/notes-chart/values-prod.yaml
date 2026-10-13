@@ -1,0 +1,14 @@
+# Production overrides: more replicas and a newer image
+replicaCount: 3
+
+image:
+  repository: nginx
+  tag: 1.27-alpine
+
+service:
+  port: 80
+  nodePort: 30090
+
+app:
+  name: notes-app
+  environment: production

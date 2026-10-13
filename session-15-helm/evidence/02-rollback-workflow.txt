@@ -1,0 +1,101 @@
+# 1) INSTALL revision 1 (nginx 1.26, message v1). Client: busybox Pod helm-client; each check waits for old Pods to exit and retries up to 5 times
+$ helm install shop session-15-helm/02-rollback-workflow/web-release --wait --timeout 3m
+NAME: shop
+LAST DEPLOYED: Tue Oct 13 18:04:17 2026
+NAMESPACE: default
+STATUS: deployed
+REVISION: 1
+DESCRIPTION: Install complete
+TEST SUITE: None
+NOTES:
+web-release revision 1 is deployed as release "shop".
+Page message: Release v1 - Welcome to the shop
+Test it from inside the cluster:
+  kubectl run web-check --rm -i --restart=Never --image=busybox:1.36 -- wget -qO- http://shop-web-release
+# 2) VERIFY
+$ kubectl rollout status deployment/shop-web-release --timeout=120s && until [ $(kubectl get pods -l app.kubernetes.io/instance=shop --no-headers 2>/dev/null | wc -l) -eq 2 ]; do sleep 1; done && echo 'old Pods have exited'
+deployment "shop-web-release" successfully rolled out
+old Pods have exited
+$ for i in 1 2 3 4 5; do out=$(kubectl exec helm-client -- wget -S -qO- -T 3 http://shop-web-release 2>&1) && break; echo "attempt $i: $(echo "$out" | grep wget:)"; sleep 2; done; echo "$out" | grep -E 'Server:|<h1>|<p>'
+  Server: nginx/1.26.3
+<h1>Release v1 - Welcome to the shop</h1>
+<p>helm release shop, revision 1, image nginx:1.26-alpine</p>
+# 3) UPGRADE to revision 2 (nginx 1.27, new message)
+$ helm upgrade shop session-15-helm/02-rollback-workflow/web-release --set image.tag=1.27-alpine --set message='Release v2 - New autumn collection' --wait --timeout 3m | head -6
+Release "shop" has been upgraded. Happy Helming!
+NAME: shop
+LAST DEPLOYED: Tue Oct 13 18:04:20 2026
+NAMESPACE: default
+STATUS: deployed
+REVISION: 2
+# 4) VERIFY
+$ kubectl rollout status deployment/shop-web-release --timeout=120s && until [ $(kubectl get pods -l app.kubernetes.io/instance=shop --no-headers 2>/dev/null | wc -l) -eq 2 ]; do sleep 1; done && echo 'old Pods have exited'
+deployment "shop-web-release" successfully rolled out
+old Pods have exited
+$ for i in 1 2 3 4 5; do out=$(kubectl exec helm-client -- wget -S -qO- -T 3 http://shop-web-release 2>&1) && break; echo "attempt $i: $(echo "$out" | grep wget:)"; sleep 2; done; echo "$out" | grep -E 'Server:|<h1>|<p>'
+  Server: nginx/1.27.5
+<h1>Release v2 - New autumn collection</h1>
+<p>helm release shop, revision 2, image nginx:1.27-alpine</p>
+$ helm history shop
+REVISION	UPDATED                 	STATUS    	CHART            	APP VERSION	DESCRIPTION     
+1       	Tue Oct 13 18:04:17 2026	superseded	web-release-1.0.0	1.26       	Install complete
+2       	Tue Oct 13 18:04:20 2026	deployed  	web-release-1.0.0	1.26       	Upgrade complete
+# 5) UPGRADE again to revision 3 (nginx 1.28, message v3) - with a config mistake: service.targetPort=8080
+$ helm upgrade shop session-15-helm/02-rollback-workflow/web-release --reuse-values --set image.tag=1.28-alpine --set message='Release v3 - Flash sale' --set service.targetPort=8080 --wait --timeout 3m | head -6
+Release "shop" has been upgraded. Happy Helming!
+NAME: shop
+LAST DEPLOYED: Tue Oct 13 18:04:30 2026
+NAMESPACE: default
+STATUS: deployed
+REVISION: 3
+# 6) VERIFY - revision 3 is 'deployed' and its Pods are healthy, but every request fails: the Service points to port 8080
+$ kubectl rollout status deployment/shop-web-release --timeout=120s && until [ $(kubectl get pods -l app.kubernetes.io/instance=shop --no-headers 2>/dev/null | wc -l) -eq 2 ]; do sleep 1; done && echo 'old Pods have exited'
+deployment "shop-web-release" successfully rolled out
+old Pods have exited
+$ for i in 1 2 3 4 5; do out=$(kubectl exec helm-client -- wget -S -qO- -T 3 http://shop-web-release 2>&1) && break; echo "attempt $i: $(echo "$out" | grep wget:)"; sleep 2; done; echo "$out" | grep -E 'Server:|<h1>|<p>'
+attempt 1: wget: can't connect to remote host (10.108.110.208): Connection refused
+attempt 2: wget: can't connect to remote host (10.108.110.208): Connection refused
+attempt 3: wget: can't connect to remote host (10.108.110.208): Connection refused
+attempt 4: wget: can't connect to remote host (10.108.110.208): Connection refused
+attempt 5: wget: can't connect to remote host (10.108.110.208): Connection refused
+$ kubectl get svc shop-web-release -o jsonpath='{.spec.ports[0].targetPort}'; echo
+8080
+$ helm history shop
+REVISION	UPDATED                 	STATUS    	CHART            	APP VERSION	DESCRIPTION     
+1       	Tue Oct 13 18:04:17 2026	superseded	web-release-1.0.0	1.26       	Install complete
+2       	Tue Oct 13 18:04:20 2026	superseded	web-release-1.0.0	1.26       	Upgrade complete
+3       	Tue Oct 13 18:04:30 2026	deployed  	web-release-1.0.0	1.26       	Upgrade complete
+$ helm get values shop --revision 3
+USER-SUPPLIED VALUES:
+image:
+  tag: 1.28-alpine
+message: Release v3 - Flash sale
+service:
+  targetPort: 8080
+# 7) ROLLBACK to revision 2 (last known good)
+$ helm rollback shop 2 --wait --timeout 3m
+Rollback was a success! Happy Helming!
+# 8) VERIFY - the page says 'revision 2' because a rollback re-applies revision 2's stored manifests (as new revision 4)
+$ kubectl rollout status deployment/shop-web-release --timeout=120s && until [ $(kubectl get pods -l app.kubernetes.io/instance=shop --no-headers 2>/dev/null | wc -l) -eq 2 ]; do sleep 1; done && echo 'old Pods have exited'
+deployment "shop-web-release" successfully rolled out
+old Pods have exited
+$ for i in 1 2 3 4 5; do out=$(kubectl exec helm-client -- wget -S -qO- -T 3 http://shop-web-release 2>&1) && break; echo "attempt $i: $(echo "$out" | grep wget:)"; sleep 2; done; echo "$out" | grep -E 'Server:|<h1>|<p>'
+  Server: nginx/1.27.5
+<h1>Release v2 - New autumn collection</h1>
+<p>helm release shop, revision 2, image nginx:1.27-alpine</p>
+$ helm history shop
+REVISION	UPDATED                 	STATUS    	CHART            	APP VERSION	DESCRIPTION     
+1       	Tue Oct 13 18:04:17 2026	superseded	web-release-1.0.0	1.26       	Install complete
+2       	Tue Oct 13 18:04:20 2026	superseded	web-release-1.0.0	1.26       	Upgrade complete
+3       	Tue Oct 13 18:04:30 2026	superseded	web-release-1.0.0	1.26       	Upgrade complete
+4       	Tue Oct 13 18:04:50 2026	deployed  	web-release-1.0.0	1.26       	Rollback to 2   
+$ kubectl get svc shop-web-release -o jsonpath='{.spec.ports[0].targetPort}'; echo
+80
+$ helm get values shop
+USER-SUPPLIED VALUES:
+image:
+  tag: 1.27-alpine
+message: Release v2 - New autumn collection
+# Cleanup
+$ helm uninstall shop
+release "shop" uninstalled

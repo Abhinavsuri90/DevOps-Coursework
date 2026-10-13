@@ -1,0 +1,8 @@
+apiVersion: v2
+name: web-release
+description: Small nginx site used to practise helm upgrade, history and rollback (Session 15)
+type: application
+version: 1.0.0
+appVersion: "1.26"
+maintainers:
+  - name: Abhinav

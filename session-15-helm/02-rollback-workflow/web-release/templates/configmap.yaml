@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "web-release.fullname" . }}-site
+  labels:
+    {{- include "web-release.labels" . | nindent 4 }}
+data:
+  index.html: |
+    <!doctype html>
+    <html><body>
+    <h1>{{ .Values.message }}</h1>
+    <p>helm release {{ .Release.Name }}, revision {{ .Release.Revision }}, image {{ .Values.image.repository }}:{{ .Values.image.tag }}</p>
+    </body></html>
