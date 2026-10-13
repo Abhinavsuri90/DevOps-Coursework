@@ -1,0 +1,49 @@
+# Setup: Deployment web (2 nginx Pods) and Service web-service; client is a busybox Pod named net-debug
+$ kubectl apply -f session-14-kubernetes-troubleshooting/02-common-issues/05-service-connectivity/deployment.yaml -f session-14-kubernetes-troubleshooting/02-common-issues/05-service-connectivity/broken-service.yaml
+deployment.apps/web created
+service/web-service created
+$ kubectl rollout status deployment/web --timeout=120s
+Waiting for deployment "web" rollout to finish: 0 of 2 updated replicas are available...
+Waiting for deployment "web" rollout to finish: 1 of 2 updated replicas are available...
+deployment "web" successfully rolled out
+# PROBLEM: the Pods are Running, but calls to the Service fail
+$ kubectl exec net-debug -- wget -qO- -T 3 http://web-service
+wget: can't connect to remote host (10.99.21.6): Connection refused
+command terminated with exit code 1
+# INVESTIGATE: does the Service have endpoints? does its selector match the Pod labels?
+$ kubectl get endpointslice -l kubernetes.io/service-name=web-service
+NAME                ADDRESSTYPE   PORTS     ENDPOINTS   AGE
+web-service-lctcj   IPv4          <unset>   <unset>     2s
+$ kubectl describe service web-service | grep -E '^(Selector|TargetPort|Endpoints):'
+Selector:                 app=web-ahsgdf
+TargetPort:               8080/TCP
+Endpoints:                
+$ kubectl get pods -l app=web --show-labels
+NAME                   READY   STATUS    RESTARTS   AGE   LABELS
+web-6bd858c6f9-k2jvt   1/1     Running   0          2s    app=web,pod-template-hash=6bd858c6f9
+web-6bd858c6f9-wgg89   1/1     Running   0          2s    app=web,pod-template-hash=6bd858c6f9
+# Root cause 1: selector app=web-ahsgdf matches no Pod. Fix it:
+$ kubectl patch service web-service --type merge -p '{"spec":{"selector":{"app":"web"}}}'
+service/web-service patched
+$ kubectl get endpointslice -l kubernetes.io/service-name=web-service
+NAME                ADDRESSTYPE   PORTS   ENDPOINTS                   AGE
+web-service-lctcj   IPv4          8080    10.244.0.112,10.244.0.111   5s
+$ kubectl exec net-debug -- wget -qO- -T 3 http://web-service
+wget: can't connect to remote host (10.99.21.6): Connection refused
+command terminated with exit code 1
+# Still failing: endpoints now exist, but on port 8080. nginx listens on 80
+$ kubectl exec deploy/web -- sh -c 'netstat -tln | grep LISTEN'
+tcp        0      0 0.0.0.0:80              0.0.0.0:*               LISTEN      
+tcp        0      0 :::80                   :::*                    LISTEN      
+# Root cause 2: targetPort 8080 does not match the container port 80. Apply the corrected Service:
+$ kubectl apply -f session-14-kubernetes-troubleshooting/02-common-issues/05-service-connectivity/fixed-service.yaml
+service/web-service configured
+$ kubectl get endpointslice -l kubernetes.io/service-name=web-service
+NAME                ADDRESSTYPE   PORTS   ENDPOINTS                   AGE
+web-service-lctcj   IPv4          80      10.244.0.112,10.244.0.111   9s
+# VERIFY
+$ kubectl exec net-debug -- wget -qO- -T 3 http://web-service | grep -o '<title>.*</title>'
+<title>Welcome to nginx!</title>
+$ kubectl delete -f session-14-kubernetes-troubleshooting/02-common-issues/05-service-connectivity/fixed-service.yaml -f session-14-kubernetes-troubleshooting/02-common-issues/05-service-connectivity/deployment.yaml
+service "web-service" deleted from default namespace
+deployment.apps "web" deleted from default namespace

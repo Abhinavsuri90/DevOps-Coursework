@@ -1,0 +1,15 @@
+# Instructor scenario 3: requests far larger than any node can offer.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pending-resources
+  labels:
+    lab: troubleshooting
+spec:
+  containers:
+    - name: hungry-app
+      image: nginx:1.27-alpine
+      resources:
+        requests:
+          cpu: "500"
+          memory: 1000Gi

@@ -1,0 +1,23 @@
+# Instructor scenario 5: the process allocates ~200 MB while the memory limit is 20Mi.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: oom-app
+  labels:
+    lab: troubleshooting
+spec:
+  containers:
+    - name: memory-hungry
+      image: python:3.12-alpine
+      command:
+        - python3
+        - -c
+        - |
+          import time
+          print("Allocating memory...", flush=True)
+          chunks = [b"x" * (10 * 1024 * 1024) for _ in range(20)]
+          print("Allocated", len(chunks) * 10, "MB", flush=True)
+          time.sleep(3600)
+      resources:
+        limits:
+          memory: 20Mi

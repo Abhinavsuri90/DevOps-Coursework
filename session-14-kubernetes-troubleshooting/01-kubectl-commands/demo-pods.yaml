@@ -1,0 +1,58 @@
+# Pods used to practise the core troubleshooting commands (based on the instructor's 01-05 folders).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: get-demo
+  labels:
+    app: get-demo
+    lab: kubectl-commands
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.27-alpine
+      ports:
+        - containerPort: 80
+      resources:
+        requests:
+          cpu: 50m
+          memory: 32Mi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: logs-demo
+  labels:
+    lab: kubectl-commands
+spec:
+  containers:
+    - name: app
+      image: busybox:1.36
+      command:
+        - sh
+        - -c
+        - |
+          echo "Application started"
+          echo "Connecting to database..."
+          echo "Database connection successful"
+          echo "Application is running"
+          while true; do
+            echo "$(date +%T) Application is healthy"
+            sleep 5
+          done
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: exec-demo
+  labels:
+    lab: kubectl-commands
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.27-alpine
+      env:
+        - name: APP_ENV
+          value: training
+    - name: sidecar
+      image: busybox:1.36
+      command: ["sh", "-c", "while true; do echo sidecar tick; sleep 10; done"]

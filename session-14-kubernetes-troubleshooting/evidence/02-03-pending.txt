@@ -1,0 +1,49 @@
+# PROBLEM: two Pods stay Pending
+$ kubectl apply -f session-14-kubernetes-troubleshooting/02-common-issues/03-pending/broken-resources.yaml -f session-14-kubernetes-troubleshooting/02-common-issues/03-pending/broken-nodeselector.yaml
+pod/pending-resources created
+pod/pending-nodeselector created
+$ kubectl get pods pending-resources pending-nodeselector -o wide
+NAME                   READY   STATUS    RESTARTS   AGE   IP       NODE     NOMINATED NODE   READINESS GATES
+pending-resources      0/1     Pending   0          8s    <none>   <none>   <none>           <none>
+pending-nodeselector   0/1     Pending   0          8s    <none>   <none>   <none>           <none>
+# INVESTIGATE: the scheduler explains why in the events
+$ kubectl describe pod pending-resources | sed -n '/^Events:/,$p' | cut -c1-200
+Events:
+  Type     Reason            Age   From               Message
+  ----     ------            ----  ----               -------
+  Warning  FailedScheduling  8s    default-scheduler  0/1 nodes are available: 1 Insufficient cpu, 1 Insufficient memory. preemption: 0/1 nodes are available: 1 Preemption is not helpful for schedulin
+$ kubectl describe pod pending-nodeselector | sed -n '/^Events:/,$p' | cut -c1-200
+Events:
+  Type     Reason            Age   From               Message
+  ----     ------            ----  ----               -------
+  Warning  FailedScheduling  8s    default-scheduler  0/1 nodes are available: 1 node(s) didn't match Pod's node affinity/selector. preemption: 0/1 nodes are available: 1 Preemption is not helpful for
+$ kubectl describe node minikube | sed -n '/^Allocatable:/,/^System Info:/p' | head -7
+Allocatable:
+  cpu:                8
+  ephemeral-storage:  485473984512
+  hugepages-1Gi:      0
+  hugepages-2Mi:      0
+  hugepages-32Mi:     0
+  hugepages-64Ki:     0
+$ kubectl get nodes --show-labels | tr ',' '\n' | grep -E 'NAME|hostname'
+NAME       STATUS   ROLES           AGE    VERSION   LABELS
+kubernetes.io/hostname=minikube
+# ROOT CAUSE: (1) requests of 500 CPUs / 1000Gi cannot fit the node (8 allocatable CPUs); (2) nodeSelector names a node that does not exist
+# FIX: realistic requests; a nodeSelector that matches a real node label
+$ kubectl delete pod pending-resources pending-nodeselector --grace-period=1
+pod "pending-resources" deleted from default namespace
+pod "pending-nodeselector" deleted from default namespace
+$ kubectl apply -f session-14-kubernetes-troubleshooting/02-common-issues/03-pending/fixed.yaml -f session-14-kubernetes-troubleshooting/02-common-issues/03-pending/fixed-nodeselector.yaml
+pod/pending-resources created
+pod/pending-nodeselector created
+$ kubectl wait --for=condition=Ready pod/pending-resources pod/pending-nodeselector --timeout=120s
+pod/pending-resources condition met
+pod/pending-nodeselector condition met
+# VERIFY
+$ kubectl get pods pending-resources pending-nodeselector -o wide
+NAME                   READY   STATUS    RESTARTS   AGE   IP             NODE       NOMINATED NODE   READINESS GATES
+pending-resources      1/1     Running   0          0s    10.244.0.105   minikube   <none>           <none>
+pending-nodeselector   1/1     Running   0          0s    10.244.0.106   minikube   <none>           <none>
+$ kubectl delete pod pending-resources pending-nodeselector --grace-period=1
+pod "pending-resources" deleted from default namespace
+pod "pending-nodeselector" deleted from default namespace

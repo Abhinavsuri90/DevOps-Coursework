@@ -1,0 +1,34 @@
+# PROBLEM: the Pod is stuck in ContainerCreating
+$ kubectl apply -f session-14-kubernetes-troubleshooting/02-common-issues/04-containercreating/broken.yaml
+pod/stuck-creating created
+$ kubectl get pod stuck-creating
+NAME             READY   STATUS              RESTARTS   AGE
+stuck-creating   0/1     ContainerCreating   0          21s
+# INVESTIGATE
+$ kubectl describe pod stuck-creating | sed -n '/^Events:/,$p' | cut -c1-170
+Events:
+  Type     Reason       Age               From               Message
+  ----     ------       ----              ----               -------
+  Normal   Scheduled    21s               default-scheduler  Successfully assigned default/stuck-creating to minikube
+  Warning  FailedMount  5s (x6 over 20s)  kubelet            MountVolume.SetUp failed for volume "site-config" : configmap "site-config" not found
+$ kubectl get configmap site-config
+Error from server (NotFound): configmaps "site-config" not found
+# ROOT CAUSE: the Pod mounts ConfigMap site-config, which does not exist, so the volume cannot be set up
+# FIX: create the ConfigMap; the kubelet retries the mount and the container starts without recreating the Pod
+$ kubectl apply -f session-14-kubernetes-troubleshooting/02-common-issues/04-containercreating/site-config.yaml
+configmap/site-config created
+$ kubectl wait --for=condition=Ready pod/stuck-creating --timeout=180s
+pod/stuck-creating condition met
+# VERIFY
+$ kubectl get pod stuck-creating
+NAME             READY   STATUS    RESTARTS   AGE
+stuck-creating   1/1     Running   0          33s
+$ kubectl exec stuck-creating -- wget -qO- http://localhost
+site-config loaded
+$ kubectl describe pod stuck-creating | sed -n '/^Events:/,$p' | tail -3 | cut -c1-150
+  Normal   Pulled       0s                 kubelet            spec.containers{nginx}: Container image "nginx:1.27-alpine" already present on machine a
+  Normal   Created      0s                 kubelet            spec.containers{nginx}: Container created
+  Normal   Started      0s                 kubelet            spec.containers{nginx}: Container started
+$ kubectl delete -f session-14-kubernetes-troubleshooting/02-common-issues/04-containercreating/broken.yaml -f session-14-kubernetes-troubleshooting/02-common-issues/04-containercreating/site-config.yaml --grace-period=1
+pod "stuck-creating" deleted from default namespace
+configmap "site-config" deleted from default namespace

@@ -1,0 +1,181 @@
+$ kubectl apply -f session-14-kubernetes-troubleshooting/01-kubectl-commands/demo-pods.yaml
+pod/get-demo created
+pod/logs-demo created
+pod/exec-demo created
+$ kubectl wait --for=condition=Ready pod/get-demo pod/logs-demo pod/exec-demo --timeout=120s
+pod/get-demo condition met
+pod/logs-demo condition met
+pod/exec-demo condition met
+# kubectl get - list objects, filter by label, wide output, custom columns
+$ kubectl get pods
+NAME        READY   STATUS    RESTARTS   AGE
+exec-demo   2/2     Running   0          1s
+get-demo    1/1     Running   0          1s
+logs-demo   1/1     Running   0          1s
+$ kubectl get pods -o wide
+NAME        READY   STATUS    RESTARTS   AGE   IP            NODE       NOMINATED NODE   READINESS GATES
+exec-demo   2/2     Running   0          1s    10.244.0.97   minikube   <none>           <none>
+get-demo    1/1     Running   0          1s    10.244.0.95   minikube   <none>           <none>
+logs-demo   1/1     Running   0          1s    10.244.0.96   minikube   <none>           <none>
+$ kubectl get pods -l app=get-demo --show-labels
+NAME       READY   STATUS    RESTARTS   AGE   LABELS
+get-demo   1/1     Running   0          2s    app=get-demo,lab=kubectl-commands
+$ kubectl get pod get-demo -o 'custom-columns=NAME:.metadata.name,NODE:.spec.nodeName,IP:.status.podIP,PHASE:.status.phase,IMAGE:.spec.containers[0].image'
+NAME       NODE       IP            PHASE     IMAGE
+get-demo   minikube   10.244.0.95   Running   nginx:1.27-alpine
+$ kubectl get pod get-demo -o yaml | sed -n '/^status:/,/^  hostIP:/p' | head -14
+status:
+  allocatedResources:
+    cpu: 50m
+    memory: 32Mi
+  conditions:
+  - lastProbeTime: null
+    lastTransitionTime: "2026-10-13T12:12:35Z"
+    observedGeneration: 1
+    status: "True"
+    type: PodReadyToStartContainers
+  - lastProbeTime: null
+    lastTransitionTime: "2026-10-13T12:12:34Z"
+    observedGeneration: 1
+    status: "True"
+$ kubectl get nodes -o wide
+NAME       STATUS   ROLES           AGE   VERSION   INTERNAL-IP    EXTERNAL-IP   OS-IMAGE                         KERNEL-VERSION             CONTAINER-RUNTIME
+minikube   Ready    control-plane   5h    v1.37.0   192.168.49.2   <none>        Debian GNU/Linux 12 (bookworm)   6.12.76-linuxkit (arm64)   containerd://2.3.4
+# kubectl describe - full details plus recent Events
+$ kubectl describe pod get-demo | sed -n '1,12p;/^Conditions:/,$p'
+Name:             get-demo
+Namespace:        default
+Priority:         0
+Service Account:  default
+Node:             minikube/192.168.49.2
+Start Time:       Tue, 13 Oct 2026 17:42:34 +0530
+Labels:           app=get-demo
+                  lab=kubectl-commands
+Annotations:      <none>
+Status:           Running
+IP:               10.244.0.95
+IPs:
+Conditions:
+  Type                        Status
+  PodReadyToStartContainers   True 
+  Initialized                 True 
+  Ready                       True 
+  ContainersReady             True 
+  PodScheduled                True 
+Volumes:
+  kube-api-access-mfdd5:
+    Type:                    Projected (a volume that contains injected data from multiple sources)
+    TokenExpirationSeconds:  3607
+    ConfigMapName:           kube-root-ca.crt
+    Optional:                false
+    DownwardAPI:             true
+QoS Class:                   Burstable
+Node-Selectors:              <none>
+Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
+                             node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
+Events:
+  Type    Reason     Age   From               Message
+  ----    ------     ----  ----               -------
+  Normal  Scheduled  2s    default-scheduler  Successfully assigned default/get-demo to minikube
+  Normal  Pulled     1s    kubelet            spec.containers{nginx}: Container image "nginx:1.27-alpine" already present on machine and can be accessed by the pod
+  Normal  Created    1s    kubelet            spec.containers{nginx}: Container created
+  Normal  Started    1s    kubelet            spec.containers{nginx}: Container started
+# kubectl logs - container output (tail, since, specific container)
+$ kubectl logs logs-demo --tail=6
+Application started
+Connecting to database...
+Database connection successful
+Application is running
+12:12:35 Application is healthy
+$ kubectl logs logs-demo --since=15s
+Application started
+Connecting to database...
+Database connection successful
+Application is running
+12:12:35 Application is healthy
+$ kubectl logs exec-demo -c sidecar --tail=2
+sidecar tick
+# kubectl exec - run commands inside a container
+$ kubectl exec exec-demo -c nginx -- printenv APP_ENV
+training
+$ kubectl exec exec-demo -c nginx -- sh -c 'nginx -v 2>&1; ls /usr/share/nginx/html'
+nginx version: nginx/1.27.5
+50x.html
+index.html
+$ kubectl exec exec-demo -c nginx -- wget -qO- http://localhost | grep -o '<title>.*</title>'
+<title>Welcome to nginx!</title>
+$ kubectl exec exec-demo -c sidecar -- wget -qO- http://localhost:80 | grep -o '<h1>.*</h1>'
+<h1>Welcome to nginx!</h1>
+# kubectl logs again after 20 seconds: new heartbeat lines
+$ kubectl logs logs-demo --tail=3
+12:12:50 Application is healthy
+12:12:55 Application is healthy
+12:13:00 Application is healthy
+# kubectl events - cluster events, newest last; filter by object or type
+$ kubectl events --for pod/get-demo
+LAST SEEN   TYPE     REASON      OBJECT         MESSAGE
+31s         Normal   Scheduled   Pod/get-demo   Successfully assigned default/get-demo to minikube
+30s         Normal   Pulled      Pod/get-demo   Container image "nginx:1.27-alpine" already present on machine and can be accessed by the pod
+30s         Normal   Created     Pod/get-demo   Container created
+30s         Normal   Started     Pod/get-demo   Container started
+$ kubectl get events --sort-by=.lastTimestamp | tail -6
+30s         Normal    Created                        pod/exec-demo                               Container created
+30s         Normal    Pulled                         pod/exec-demo                               Container image "busybox:1.36" already present on machine and can be accessed by the pod
+30s         Normal    Started                        pod/exec-demo                               Container started
+30s         Normal    Created                        pod/exec-demo                               Container created
+30s         Normal    Pulled                         pod/exec-demo                               Container image "nginx:1.27-alpine" already present on machine and can be accessed by the pod
+30s         Normal    Pulled                         pod/logs-demo                               Container image "busybox:1.36" already present on machine and can be accessed by the pod
+$ kubectl events --types=Warning -A | tail -4
+default         21m (x5 over 22m)      Warning   Unhealthy                      Pod/slow-start-no-startup                      Liveness probe failed: Get "http://10.244.0.82:80/": dial tcp 10.244.0.82:80: connect: connection refused
+default         20m                    Warning   FailedToCreateEndpoint         Endpoints/web-service                          Failed to create endpoint for service production-webapp/web-service: endpoints "web-service" already exists
+ingress-nginx   19m (x4 over 32m)      Warning   Unhealthy                      Pod/ingress-nginx-controller-d7cd8c989-755mv   Readiness probe failed: Get "http://10.244.0.6:10254/healthz": context deadline exceeded (Client.Timeout exceeded while awaiting headers)
+kube-system     18m                    Warning   Unhealthy                      Pod/kube-scheduler-minikube                    Readiness probe failed: Get "https://127.0.0.1:10259/readyz": net/http: request canceled while waiting for connection (Client.Timeout exceeded while awaiting headers)
+# kubectl explain - built-in API documentation
+$ kubectl explain pod.spec.containers.livenessProbe | sed -n '1,14p'
+KIND:       Pod
+VERSION:    v1
+
+FIELD: livenessProbe <Probe>
+
+
+DESCRIPTION:
+    Periodic probe of container liveness. Container will be restarted if the
+    probe fails. Cannot be updated. More info:
+    https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle#container-probes
+    Probe describes a health check to be performed against a container to
+    determine whether it is alive or ready to receive traffic.
+    
+FIELDS:
+$ kubectl explain deployment.spec.strategy.rollingUpdate.maxUnavailable | tail -8
+    that the total number of pods available at all times during the update is at
+    least 70% of desired pods.
+    IntOrString is a type that can hold an int32 or a string.  When used in JSON
+    or YAML marshalling and unmarshalling, it produces or consumes the inner
+    type.  This allows you to have, for example, a JSON field that can accept a
+    name or number.
+    
+
+# kubectl top - live CPU and memory from metrics-server
+$ kubectl top nodes
+NAME       CPU(cores)   CPU(%)   MEMORY(bytes)   MEMORY(%)   
+minikube   309m         3%       1156Mi          29%         
+$ kubectl top pods
+NAME        CPU(cores)   MEMORY(bytes)   
+exec-demo   9m           7Mi             
+get-demo    5m           6Mi             
+logs-demo   5m           0Mi             
+$ kubectl top pod exec-demo --containers
+POD         NAME      CPU(cores)   MEMORY(bytes)   
+exec-demo   nginx     8m           6Mi             
+exec-demo   sidecar   1m           0Mi             
+$ kubectl top pods -A --sort-by=memory | head -6
+NAMESPACE       NAME                                       CPU(cores)   MEMORY(bytes)   
+kube-system     kube-apiserver-minikube                    74m          275Mi           
+ingress-nginx   ingress-nginx-controller-d7cd8c989-755mv   9m           109Mi           
+kube-system     kube-controller-manager-minikube           25m          80Mi            
+kube-system     etcd-minikube                              33m          52Mi            
+kube-system     kube-scheduler-minikube                    12m          31Mi            
+$ kubectl delete -f session-14-kubernetes-troubleshooting/01-kubectl-commands/demo-pods.yaml --grace-period=1
+pod "get-demo" deleted from default namespace
+pod "logs-demo" deleted from default namespace
+pod "exec-demo" deleted from default namespace

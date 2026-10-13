@@ -1,0 +1,13 @@
+# Fixed: the nodeSelector now matches a real node label (kubectl get nodes --show-labels).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pending-nodeselector
+  labels:
+    lab: troubleshooting
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: minikube
+  containers:
+    - name: nginx
+      image: nginx:1.27-alpine

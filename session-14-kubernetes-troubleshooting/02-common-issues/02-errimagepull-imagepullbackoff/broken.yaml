@@ -1,0 +1,11 @@
+# Instructor scenario 2: the image name and tag do not exist in any registry.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: imagepull-app
+  labels:
+    lab: troubleshooting
+spec:
+  containers:
+    - name: web-app
+      image: nginx:1.27-alpne

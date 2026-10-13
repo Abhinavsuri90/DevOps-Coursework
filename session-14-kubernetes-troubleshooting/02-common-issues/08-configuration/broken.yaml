@@ -1,0 +1,27 @@
+# The Deployment expects a Secret named payment-gateway-credentials that does not exist.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payments
+  labels:
+    lab: troubleshooting
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payments
+  template:
+    metadata:
+      labels:
+        app: payments
+    spec:
+      containers:
+        - name: app
+          image: busybox:1.36
+          command: ["sh", "-c", "echo payments started with key length ${#API_KEY}; sleep 3600"]
+          env:
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: payment-gateway-credentials
+                  key: api-key

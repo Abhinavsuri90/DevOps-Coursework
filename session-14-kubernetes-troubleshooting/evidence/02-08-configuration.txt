@@ -1,0 +1,30 @@
+# PROBLEM: the payments Pod never starts
+$ kubectl apply -f session-14-kubernetes-troubleshooting/02-common-issues/08-configuration/broken.yaml
+deployment.apps/payments created
+$ kubectl get pods -l app=payments
+NAME                        READY   STATUS                       RESTARTS   AGE
+payments-6c6d6c895b-x7c2s   0/1     CreateContainerConfigError   0          12s
+# INVESTIGATE
+$ kubectl describe pod -l app=payments | sed -n '/^Events:/,$p' | tail -3 | cut -c1-170
+  Normal   Scheduled  12s                default-scheduler  Successfully assigned default/payments-6c6d6c895b-x7c2s to minikube
+  Normal   Pulled     12s (x2 over 12s)  kubelet            spec.containers{app}: Container image "busybox:1.36" already present on machine and can be accessed by the pod
+  Warning  Failed     12s (x2 over 12s)  kubelet            spec.containers{app}: Error: secret "payment-gateway-credentials" not found
+$ kubectl get secret payment-gateway-credentials
+Error from server (NotFound): secrets "payment-gateway-credentials" not found
+# ROOT CAUSE: the container's env references Secret payment-gateway-credentials, which was never created (CreateContainerConfigError)
+# FIX: create the Secret at deploy time (random demo value generated inside the command, never printed or committed)
+$ kubectl create secret generic payment-gateway-credentials --from-literal=api-key="$(openssl rand -hex 16)"
+secret/payment-gateway-credentials created
+$ kubectl rollout status deployment/payments --timeout=120s
+Waiting for deployment "payments" rollout to finish: 0 of 1 updated replicas are available...
+deployment "payments" successfully rolled out
+# VERIFY: the kubelet retried and the container started without recreating the Deployment
+$ kubectl get pods -l app=payments
+NAME                        READY   STATUS    RESTARTS   AGE
+payments-6c6d6c895b-x7c2s   1/1     Running   0          14s
+$ kubectl logs deploy/payments
+payments started with key length 32
+$ kubectl delete -f session-14-kubernetes-troubleshooting/02-common-issues/08-configuration/broken.yaml
+deployment.apps "payments" deleted from default namespace
+$ kubectl delete secret payment-gateway-credentials
+secret "payment-gateway-credentials" deleted from default namespace

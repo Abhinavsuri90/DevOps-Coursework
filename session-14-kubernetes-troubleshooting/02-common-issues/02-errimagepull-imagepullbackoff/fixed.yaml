@@ -1,0 +1,11 @@
+# Fixed: correct tag (alpne -> alpine).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: imagepull-app
+  labels:
+    lab: troubleshooting
+spec:
+  containers:
+    - name: web-app
+      image: nginx:1.27-alpine

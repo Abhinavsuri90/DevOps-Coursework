@@ -1,0 +1,44 @@
+# PROBLEM: the Pod keeps restarting
+$ kubectl apply -f session-14-kubernetes-troubleshooting/02-common-issues/01-crashloopbackoff/broken.yaml
+pod/crashloop-app created
+$ for i in $(seq 1 10); do printf '%s  ' "$(date +%T)"; kubectl get pod crashloop-app --no-headers; sleep 5; done
+17:46:10  crashloop-app   0/1   ContainerCreating   0     0s
+17:46:16  crashloop-app   0/1   Error   1 (5s ago)   6s
+17:46:21  crashloop-app   0/1   Error   1 (10s ago)   11s
+17:46:26  crashloop-app   0/1   Error   2 (15s ago)   16s
+17:46:31  crashloop-app   0/1   Error   2 (20s ago)   21s
+17:46:36  crashloop-app   0/1   Error   2 (25s ago)   26s
+17:46:41  crashloop-app   0/1   Error   2 (30s ago)   31s
+17:46:46  crashloop-app   0/1   Error   2 (35s ago)   36s
+17:46:51  crashloop-app   0/1   Error   2 (40s ago)   41s
+17:46:56  crashloop-app   0/1   Error   3 (33s ago)   46s
+# INVESTIGATE: the container's own output, its exit code, and the kubelet's events
+$ kubectl logs crashloop-app
+[FATAL ERROR]: DATABASE_URL environment variable is MISSING!
+$ kubectl describe pod crashloop-app | sed -n '/Last State:/,/Restart Count:/p'
+    Last State:     Terminated
+      Reason:       Error
+      Exit Code:    1
+      Started:      Tue, 13 Oct 2026 17:46:23 +0530
+      Finished:     Tue, 13 Oct 2026 17:46:23 +0530
+    Ready:          False
+    Restart Count:  3
+$ kubectl describe pod crashloop-app | sed -n '/^Events:/,$p' | tail -2 | cut -c1-160
+  Normal   Started    10s (x4 over 51s)  kubelet            spec.containers{python-app}: Container started
+  Warning  BackOff    9s (x3 over 50s)   kubelet            spec.containers{python-app}: Back-off restarting failed container python-app in pod crashloop-app_de
+# ROOT CAUSE: the app exits with code 1 because DATABASE_URL is not set; the kubelet restarts it with growing back-off (10s, 20s, 40s ... 5m)
+# FIX: provide the variable (env of a running Pod cannot change, so recreate it)
+$ kubectl delete pod crashloop-app --grace-period=1
+pod "crashloop-app" deleted from default namespace
+$ kubectl apply -f session-14-kubernetes-troubleshooting/02-common-issues/01-crashloopbackoff/fixed.yaml
+pod/crashloop-app created
+$ kubectl wait --for=condition=Ready pod/crashloop-app --timeout=120s
+pod/crashloop-app condition met
+# VERIFY
+$ kubectl get pod crashloop-app
+NAME            READY   STATUS    RESTARTS   AGE
+crashloop-app   1/1     Running   0          10s
+$ kubectl logs crashloop-app
+Application started successfully, using postgres://ledger-db.default.svc.cluster.local:5432/ledger
+$ kubectl delete pod crashloop-app --grace-period=1
+pod "crashloop-app" deleted from default namespace

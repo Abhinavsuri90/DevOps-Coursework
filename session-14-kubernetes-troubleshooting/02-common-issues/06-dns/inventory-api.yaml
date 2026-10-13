@@ -1,0 +1,39 @@
+# Target for the DNS scenario: an API Service in the "production" namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: production
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory-api
+  namespace: production
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: inventory-api
+  template:
+    metadata:
+      labels:
+        app: inventory-api
+    spec:
+      containers:
+        - name: api
+          image: hashicorp/http-echo:1.0
+          args: ["-listen=:8080", "-text=inventory-api: 42 items in stock"]
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory-api
+  namespace: production
+spec:
+  selector:
+    app: inventory-api
+  ports:
+    - port: 80
+      targetPort: 8080

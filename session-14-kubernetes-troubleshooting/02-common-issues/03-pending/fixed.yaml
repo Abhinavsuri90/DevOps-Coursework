@@ -1,0 +1,17 @@
+# Fixed: realistic requests and no impossible nodeSelector.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pending-resources
+  labels:
+    lab: troubleshooting
+spec:
+  containers:
+    - name: hungry-app
+      image: nginx:1.27-alpine
+      resources:
+        requests:
+          cpu: 100m
+          memory: 64Mi
+        limits:
+          memory: 128Mi

@@ -1,0 +1,51 @@
+# Setup: inventory-api Service in namespace production; client Pod dns-client calls it every 10s
+$ kubectl apply -f session-14-kubernetes-troubleshooting/02-common-issues/06-dns/inventory-api.yaml -f session-14-kubernetes-troubleshooting/02-common-issues/06-dns/broken-client.yaml
+namespace/production created
+deployment.apps/inventory-api created
+service/inventory-api created
+pod/dns-client created
+$ kubectl -n production rollout status deployment/inventory-api --timeout=120s
+Waiting for deployment "inventory-api" rollout to finish: 0 of 1 updated replicas are available...
+deployment "inventory-api" successfully rolled out
+$ kubectl wait --for=condition=Ready pod/dns-client --timeout=120s
+pod/dns-client condition met
+# PROBLEM: the client's requests fail (curl exit 6 = could not resolve host)
+$ kubectl logs dns-client --tail=4
+12:21:29 calling inventory API...
+12:21:29 request failed (curl exit 6)
+12:21:39 calling inventory API...
+12:21:39 request failed (curl exit 6)
+# INVESTIGATE: resolve the name the app uses, then list the real Services in that namespace
+$ kubectl exec net-debug -- nslookup inventory-api-wrong-name.production.svc.cluster.local 2>&1 | tail -3
+** server can't find inventory-api-wrong-name.production.svc.cluster.local: NXDOMAIN
+
+command terminated with exit code 1
+$ kubectl get svc -n production
+NAME            TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)   AGE
+inventory-api   ClusterIP   10.99.209.147   <none>        80/TCP    13s
+$ kubectl exec net-debug -- nslookup inventory-api.production.svc.cluster.local 2>&1 | tail -3
+Address: 10.99.209.147
+
+
+$ kubectl -n kube-system get pods -l k8s-app=kube-dns
+NAME                       READY   STATUS    RESTARTS   AGE
+coredns-559f6c778d-kpt82   1/1     Running   0          137m
+# ROOT CAUSE: DNS is healthy; the client is configured with a hostname that does not exist (inventory-api-wrong-name)
+# FIX: use the Service's real FQDN inventory-api.production.svc.cluster.local
+$ kubectl delete pod dns-client --grace-period=1
+pod "dns-client" deleted from default namespace
+$ kubectl apply -f session-14-kubernetes-troubleshooting/02-common-issues/06-dns/fixed-client.yaml
+pod/dns-client created
+$ kubectl wait --for=condition=Ready pod/dns-client --timeout=120s
+pod/dns-client condition met
+# VERIFY
+$ kubectl logs dns-client --tail=4
+12:21:45 calling inventory API...
+inventory-api: 42 items in stock
+12:21:55 calling inventory API...
+inventory-api: 42 items in stock
+$ kubectl delete -f session-14-kubernetes-troubleshooting/02-common-issues/06-dns/fixed-client.yaml -f session-14-kubernetes-troubleshooting/02-common-issues/06-dns/inventory-api.yaml --grace-period=1
+pod "dns-client" deleted from default namespace
+namespace "production" deleted
+deployment.apps "inventory-api" deleted from production namespace
+service "inventory-api" deleted from production namespace

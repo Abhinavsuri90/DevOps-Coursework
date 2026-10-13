@@ -1,0 +1,13 @@
+# Instructor 08-pending-pods: a nodeSelector that matches no node.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pending-nodeselector
+  labels:
+    lab: troubleshooting
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: node-that-does-not-exist
+  containers:
+    - name: nginx
+      image: nginx:1.27-alpine

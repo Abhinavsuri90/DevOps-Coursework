@@ -1,0 +1,25 @@
+# Fixed: the limit now fits the workload (~200 MB + interpreter). Right-size from real usage (kubectl top).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: oom-app
+  labels:
+    lab: troubleshooting
+spec:
+  containers:
+    - name: memory-hungry
+      image: python:3.12-alpine
+      command:
+        - python3
+        - -c
+        - |
+          import time
+          print("Allocating memory...", flush=True)
+          chunks = [b"x" * (10 * 1024 * 1024) for _ in range(20)]
+          print("Allocated", len(chunks) * 10, "MB", flush=True)
+          time.sleep(3600)
+      resources:
+        limits:
+          memory: 320Mi
+        requests:
+          memory: 256Mi

@@ -1,0 +1,54 @@
+# Setup: orders-api Deployment + Service (Python HTTP server on port 8080); client is the busybox Pod net-debug
+$ kubectl apply -f session-14-kubernetes-troubleshooting/02-common-issues/07-pod-networking/broken.yaml
+configmap/orders-api-code created
+deployment.apps/orders-api created
+service/orders-api created
+$ kubectl rollout status deployment/orders-api --timeout=120s
+Waiting for deployment "orders-api" rollout to finish: 0 out of 1 new replicas have been updated...
+Waiting for deployment "orders-api" rollout to finish: 0 of 1 updated replicas are available...
+deployment "orders-api" successfully rolled out
+# PROBLEM: the Pod is Running and the Service has an endpoint, but nobody can connect
+$ kubectl get pods -l app=orders-api -o wide
+NAME                         READY   STATUS    RESTARTS   AGE   IP             NODE       NOMINATED NODE   READINESS GATES
+orders-api-66b898b4f-tdcmv   1/1     Running   0          6s    10.244.0.120   minikube   <none>           <none>
+$ kubectl get endpointslice -l kubernetes.io/service-name=orders-api
+NAME               ADDRESSTYPE   PORTS   ENDPOINTS      AGE
+orders-api-667ls   IPv4          8080    10.244.0.120   6s
+$ kubectl exec net-debug -- wget -qO- -T 3 http://orders-api
+wget: can't connect to remote host (10.98.20.110): Connection refused
+command terminated with exit code 1
+$ kubectl exec net-debug -- wget -qO- -T 3 http://10.244.0.120:8080
+wget: can't connect to remote host (10.244.0.120): Connection refused
+command terminated with exit code 1
+# INVESTIGATE: from inside the Pod the app answers, so check which address it listens on
+$ kubectl exec deploy/orders-api -- wget -qO- -T 3 http://127.0.0.1:8080
+orders-api OK
+$ kubectl exec deploy/orders-api -- netstat -tln
+Active Internet connections (only servers)
+Proto Recv-Q Send-Q Local Address           Foreign Address         State       
+tcp        0      0 127.0.0.1:8080          0.0.0.0:*               LISTEN      
+$ kubectl logs deploy/orders-api
+listening on 127.0.0.1:8080
+127.0.0.1 - - [13/Oct/2026 12:23:09] "GET / HTTP/1.1" 200 -
+# ROOT CAUSE: the server binds 127.0.0.1 (loopback only), so traffic arriving on the Pod IP is refused
+# FIX: bind to all interfaces (0.0.0.0)
+$ kubectl set env deployment/orders-api BIND_ADDRESS=0.0.0.0
+deployment.apps/orders-api env updated
+$ kubectl rollout status deployment/orders-api --timeout=120s
+Waiting for deployment "orders-api" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "orders-api" rollout to finish: 1 old replicas are pending termination...
+deployment "orders-api" successfully rolled out
+# No readiness probe, so the rollout is 'done' before Python listens; wait until the new Pod accepts connections
+$ for i in $(seq 1 20); do kubectl exec deploy/orders-api -- netstat -tln 2>/dev/null | grep -q '0.0.0.0:8080' && echo "listening after ~$((i*2))s" && break; sleep 2; done
+listening after ~4s
+# VERIFY
+$ kubectl exec deploy/orders-api -- netstat -tln
+Active Internet connections (only servers)
+Proto Recv-Q Send-Q Local Address           Foreign Address         State       
+tcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN      
+$ kubectl exec net-debug -- wget -qO- -T 3 http://orders-api
+orders-api OK
+$ kubectl delete -f session-14-kubernetes-troubleshooting/02-common-issues/07-pod-networking/broken.yaml
+configmap "orders-api-code" deleted from default namespace
+deployment.apps "orders-api" deleted from default namespace
+service "orders-api" deleted from default namespace

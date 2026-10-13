@@ -1,0 +1,77 @@
+# 1-4. Deploy the application, check Pods, Service and endpoints
+$ kubectl apply -f session-14-kubernetes-troubleshooting/mini-project/deployment.yaml -f session-14-kubernetes-troubleshooting/mini-project/service.yaml
+deployment.apps/troubleshooting-app created
+service/troubleshooting-service created
+$ kubectl rollout status deployment/troubleshooting-app --timeout=120s
+Waiting for deployment "troubleshooting-app" rollout to finish: 0 of 2 updated replicas are available...
+Waiting for deployment "troubleshooting-app" rollout to finish: 1 of 2 updated replicas are available...
+deployment "troubleshooting-app" successfully rolled out
+$ kubectl get pods -l app=troubleshooting-app -o wide
+NAME                                  READY   STATUS    RESTARTS   AGE   IP             NODE       NOMINATED NODE   READINESS GATES
+troubleshooting-app-fc79cc846-78s8b   1/1     Running   0          1s    10.244.0.125   minikube   <none>           <none>
+troubleshooting-app-fc79cc846-9j26p   1/1     Running   0          1s    10.244.0.126   minikube   <none>           <none>
+$ kubectl get service troubleshooting-service
+NAME                      TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)   AGE
+troubleshooting-service   ClusterIP   10.99.115.200   <none>        80/TCP    1s
+$ kubectl get endpointslice -l kubernetes.io/service-name=troubleshooting-service
+NAME                            ADDRESSTYPE   PORTS   ENDPOINTS      AGE
+troubleshooting-service-k2hkg   IPv4          80      10.244.0.126   1s
+# 5-6. Create the broken Pod and troubleshoot it (no YAML changes until the cause is known)
+$ kubectl apply -f session-14-kubernetes-troubleshooting/mini-project/broken-pod.yaml
+pod/project-broken-pod created
+$ kubectl get pod project-broken-pod
+NAME                 READY   STATUS             RESTARTS   AGE
+project-broken-pod   0/1     ImagePullBackOff   0          25s
+$ kubectl describe pod project-broken-pod | sed -n '/^Events:/,$p' | cut -c1-200
+Events:
+  Type     Reason     Age               From               Message
+  ----     ------     ----              ----               -------
+  Normal   Scheduled  25s               default-scheduler  Successfully assigned default/project-broken-pod to minikube
+  Normal   BackOff    20s               kubelet            spec.containers{app}: Back-off pulling image "nginx:this-tag-does-not-exist"
+  Warning  Failed     20s               kubelet            spec.containers{app}: Error: ImagePullBackOff
+  Normal   Pulling    8s (x2 over 25s)  kubelet            spec.containers{app}: Pulling image "nginx:this-tag-does-not-exist"
+  Warning  Failed     6s (x2 over 21s)  kubelet            spec.containers{app}: Failed to pull image "nginx:this-tag-does-not-exist": rpc error: code = NotFound desc = failed to pull and unpack image
+  Warning  Failed     6s (x2 over 21s)  kubelet            spec.containers{app}: Error: ErrImagePull
+# Fix: use a tag that exists
+$ kubectl delete pod project-broken-pod --grace-period=1
+pod "project-broken-pod" deleted from default namespace
+$ kubectl apply -f session-14-kubernetes-troubleshooting/mini-project/fixed-pod.yaml
+pod/project-broken-pod created
+$ kubectl wait --for=condition=Ready pod/project-broken-pod --timeout=120s
+pod/project-broken-pod condition met
+$ kubectl get pod project-broken-pod
+NAME                 READY   STATUS    RESTARTS   AGE
+project-broken-pod   1/1     Running   0          1s
+# 8. Service troubleshooting challenge: change the selector to app=wrong-app
+$ kubectl apply -f session-14-kubernetes-troubleshooting/mini-project/wrong-selector-service.yaml
+service/troubleshooting-service configured
+$ kubectl get service troubleshooting-service
+NAME                      TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)   AGE
+troubleshooting-service   ClusterIP   10.99.115.200   <none>        80/TCP    41s
+$ kubectl get endpointslice -l kubernetes.io/service-name=troubleshooting-service
+NAME                            ADDRESSTYPE   PORTS     ENDPOINTS   AGE
+troubleshooting-service-k2hkg   IPv4          <unset>   <unset>     41s
+$ kubectl run svc-check --rm -i --restart=Never --image=busybox:1.36 --quiet -- wget -qO- -T 3 http://troubleshooting-service 2>&1 | grep -v 'pod default/svc-check terminated' || true
+wget: can't connect to remote host (10.99.115.200): Connection refused
+# 9. Find the root cause: compare Pod labels with the Service selector
+$ kubectl get pods --show-labels -l app=troubleshooting-app
+NAME                                  READY   STATUS    RESTARTS   AGE   LABELS
+troubleshooting-app-fc79cc846-78s8b   1/1     Running   0          43s   app=troubleshooting-app,pod-template-hash=fc79cc846
+troubleshooting-app-fc79cc846-9j26p   1/1     Running   0          43s   app=troubleshooting-app,pod-template-hash=fc79cc846
+$ kubectl describe service troubleshooting-service | grep -E '^(Selector|Endpoints):'
+Selector:                 app=wrong-app
+Endpoints:                
+# Mismatch: Pods are labelled app=troubleshooting-app, the Service selects app=wrong-app. Restore the correct selector:
+$ kubectl apply -f session-14-kubernetes-troubleshooting/mini-project/service.yaml
+service/troubleshooting-service configured
+$ kubectl get endpointslice -l kubernetes.io/service-name=troubleshooting-service
+NAME                            ADDRESSTYPE   PORTS   ENDPOINTS                   AGE
+troubleshooting-service-k2hkg   IPv4          80      10.244.0.125,10.244.0.126   47s
+$ kubectl run svc-check --rm -i --restart=Never --image=busybox:1.36 --quiet -- wget -qO- -T 3 http://troubleshooting-service 2>/dev/null | grep -o '<title>.*</title>'
+<title>Welcome to nginx!</title>
+<title>Welcome to nginx!</title>
+# Cleanup
+$ kubectl delete -f session-14-kubernetes-troubleshooting/mini-project/deployment.yaml -f session-14-kubernetes-troubleshooting/mini-project/service.yaml -f session-14-kubernetes-troubleshooting/mini-project/fixed-pod.yaml --grace-period=1
+deployment.apps "troubleshooting-app" deleted from default namespace
+service "troubleshooting-service" deleted from default namespace
+pod "project-broken-pod" deleted from default namespace

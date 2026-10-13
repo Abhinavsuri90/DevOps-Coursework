@@ -1,0 +1,19 @@
+# Instructor scenario 4 (adapted): the client calls a hostname that does not exist.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dns-client
+  labels:
+    lab: troubleshooting
+spec:
+  containers:
+    - name: client
+      image: curlimages/curl:8.11.1
+      command: ["sh", "-c"]
+      args:
+        - |
+          while true; do
+            echo "$(date +%T) calling inventory API...";
+            curl -s --connect-timeout 3 http://inventory-api-wrong-name.production.svc.cluster.local || echo "$(date +%T) request failed (curl exit $?)";
+            sleep 10;
+          done

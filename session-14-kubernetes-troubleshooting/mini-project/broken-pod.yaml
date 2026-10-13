@@ -1,0 +1,9 @@
+# Instructor mini project, step 5: an image tag that does not exist.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: project-broken-pod
+spec:
+  containers:
+    - name: app
+      image: nginx:this-tag-does-not-exist

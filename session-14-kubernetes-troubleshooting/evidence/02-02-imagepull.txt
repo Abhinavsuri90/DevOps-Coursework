@@ -1,0 +1,43 @@
+# PROBLEM: the Pod never starts; status alternates between ErrImagePull and ImagePullBackOff
+$ kubectl apply -f session-14-kubernetes-troubleshooting/02-common-issues/02-errimagepull-imagepullbackoff/broken.yaml
+pod/imagepull-app created
+$ for i in $(seq 1 12); do printf '%s  ' "$(date +%T)"; kubectl get pod imagepull-app --no-headers; sleep 4; done
+17:45:03  imagepull-app   0/1   ContainerCreating   0     0s
+17:45:07  imagepull-app   0/1   ContainerCreating   0     4s
+17:45:11  imagepull-app   0/1   ErrImagePull   0     8s
+17:45:15  imagepull-app   0/1   ErrImagePull   0     12s
+17:45:19  imagepull-app   0/1   ErrImagePull   0     16s
+17:45:23  imagepull-app   0/1   ErrImagePull   0     21s
+17:45:28  imagepull-app   0/1   ImagePullBackOff   0     25s
+17:45:32  imagepull-app   0/1   ImagePullBackOff   0     29s
+17:45:36  imagepull-app   0/1   ImagePullBackOff   0     33s
+17:45:40  imagepull-app   0/1   ImagePullBackOff   0     37s
+17:45:44  imagepull-app   0/1   ErrImagePull   0     41s
+17:45:48  imagepull-app   0/1   ErrImagePull   0     45s
+# INVESTIGATE
+$ kubectl describe pod imagepull-app | grep -E '^ +Image:'
+    Image:          nginx:1.27-alpne
+$ kubectl describe pod imagepull-app | sed -n '/^Events:/,$p' | cut -c1-230
+Events:
+  Type     Reason     Age                From               Message
+  ----     ------     ----               ----               -------
+  Normal   Scheduled  49s                default-scheduler  Successfully assigned default/imagepull-app to minikube
+  Normal   Pulling    26s (x2 over 49s)  kubelet            spec.containers{web-app}: Pulling image "nginx:1.27-alpne"
+  Warning  Failed     25s (x2 over 42s)  kubelet            spec.containers{web-app}: Failed to pull image "nginx:1.27-alpne": rpc error: code = NotFound desc = failed to pull and unpack image "docker.io/library/nginx:1.27-alpne":
+  Warning  Failed     25s (x2 over 42s)  kubelet            spec.containers{web-app}: Error: ErrImagePull
+  Normal   BackOff    11s (x2 over 41s)  kubelet            spec.containers{web-app}: Back-off pulling image "nginx:1.27-alpne"
+  Warning  Failed     11s (x2 over 41s)  kubelet            spec.containers{web-app}: Error: ImagePullBackOff
+# ROOT CAUSE: tag 1.27-alpne does not exist (typo). ErrImagePull = the pull just failed; ImagePullBackOff = kubelet is waiting before retrying
+# FIX: correct the image tag
+$ kubectl delete pod imagepull-app --grace-period=1
+pod "imagepull-app" deleted from default namespace
+$ kubectl apply -f session-14-kubernetes-troubleshooting/02-common-issues/02-errimagepull-imagepullbackoff/fixed.yaml
+pod/imagepull-app created
+$ kubectl wait --for=condition=Ready pod/imagepull-app --timeout=120s
+pod/imagepull-app condition met
+# VERIFY
+$ kubectl get pod imagepull-app -o 'custom-columns=NAME:.metadata.name,STATUS:.status.phase,IMAGE:.spec.containers[0].image,READY:.status.containerStatuses[0].ready'
+NAME            STATUS    IMAGE               READY
+imagepull-app   Running   nginx:1.27-alpine   true
+$ kubectl delete pod imagepull-app --grace-period=1
+pod "imagepull-app" deleted from default namespace

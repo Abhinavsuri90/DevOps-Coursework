@@ -1,0 +1,70 @@
+# The API process binds to 127.0.0.1, so it only accepts connections from inside its own
+# container. Other Pods (and the Service) reach the Pod IP but nothing is listening there.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: orders-api-code
+  labels:
+    lab: troubleshooting
+data:
+  server.py: |
+    import os
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = b"orders-api OK\n"
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    bind = os.environ.get("BIND_ADDRESS", "127.0.0.1")
+    print(f"listening on {bind}:8080", flush=True)
+    HTTPServer((bind, 8080), Handler).serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-api
+  labels:
+    lab: troubleshooting
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orders-api
+  template:
+    metadata:
+      labels:
+        app: orders-api
+    spec:
+      containers:
+        - name: api
+          image: python:3.12-alpine
+          command: ["python3", "/app/server.py"]
+          env:
+            - name: BIND_ADDRESS
+              value: "127.0.0.1"
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: code
+              mountPath: /app
+      volumes:
+        - name: code
+          configMap:
+            name: orders-api-code
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders-api
+  labels:
+    lab: troubleshooting
+spec:
+  selector:
+    app: orders-api
+  ports:
+    - port: 80
+      targetPort: 8080

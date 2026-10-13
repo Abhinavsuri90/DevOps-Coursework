@@ -1,0 +1,25 @@
+# Fixed: DATABASE_URL is now provided (no password in the URL; credentials would come from a Secret).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: crashloop-app
+  labels:
+    lab: troubleshooting
+spec:
+  containers:
+    - name: python-app
+      image: python:3.12-alpine
+      command:
+        - python3
+        - -c
+        - |
+          import os, sys, time
+          db_url = os.environ.get("DATABASE_URL")
+          if not db_url:
+              print("[FATAL ERROR]: DATABASE_URL environment variable is MISSING!", file=sys.stderr)
+              sys.exit(1)
+          print(f"Application started successfully, using {db_url}", flush=True)
+          time.sleep(3600)
+      env:
+        - name: DATABASE_URL
+          value: postgres://ledger-db.default.svc.cluster.local:5432/ledger
