@@ -1,13 +1,96 @@
-$ docker build -t coursework-multi-stage ./multi-stage-app
-$ docker run -d --name multi-stage-app -p 8080:3000 coursework-multi-stage
-$ curl --fail http://localhost:8080
+# Session 7 - Abhinav (24BCS10282). Task 1: clone the repository that contains the multi-stage Dockerfile
+$ git clone --depth 1 https://github.com/Nency-Ravaliya/devops-heros.git
+Cloning into 'devops-heros'...
+# cd devops-heros/session6-7-docker/multi-stage-dockerfile
+$ cat Dockerfile
+# -------------------------
+# Stage 1: Build
+# -------------------------
+FROM node:24-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+
+# -------------------------
+# Stage 2: Production
+# -------------------------
+FROM node:24-alpine AS production
+WORKDIR /app
+COPY --from=builder /app/package*.json ./
+RUN npm install --omit=dev
+COPY --from=builder /app/server.js ./
+EXPOSE 3000
+CMD ["npm", "start"]
+$ docker build --progress=plain -t multi-stage-hello . 2>&1 | grep -E '^#[0-9]+ \[(builder|production)|naming to|^#[0-9]+ DONE' | tail -12
+#8 [builder 4/5] RUN npm install
+#8 DONE 4.8s
+#9 [builder 5/5] COPY . .
+#9 DONE 0.1s
+#10 [production 3/5] COPY --from=builder /app/package*.json ./
+#10 DONE 0.1s
+#11 [production 4/5] RUN npm install --omit=dev
+#11 DONE 3.6s
+#12 [production 5/5] COPY --from=builder /app/server.js ./
+#12 DONE 0.1s
+#13 naming to docker.io/library/multi-stage-hello:latest done
+#13 DONE 1.2s
+$ docker run -d --name multi-stage-hello -p 8080:3000 multi-stage-hello
+46afc498972ff4eb0447870e78b1105b8e53424ee44855d8b236289ae157222f
+$ curl -s http://localhost:8080
+<h1>Hello World from Docker Multi-Stage Build!</h1>
+$ docker ps --filter name=multi-stage-hello
+CONTAINER ID   IMAGE               COMMAND                  CREATED         STATUS         PORTS                                         NAMES
+46afc498972f   multi-stage-hello   "docker-entrypoint.s…"   4 seconds ago   Up 3 seconds   0.0.0.0:8080->3000/tcp, [::]:8080->3000/tcp   multi-stage-hello
+$ docker logs multi-stage-hello
+
+> docker-hello-world@1.0.0 start
+> node server.js
+
+Server running on port 3000
+# The final image contains only the production stage (no build-stage layers or dev dependencies)
+$ docker history --format 'table {{.CreatedBy}}\t{{.Size}}' multi-stage-hello | head -8
+CREATED BY                                      SIZE
+CMD ["npm" "start"]                             0B
+EXPOSE [3000/tcp]                               0B
+COPY /app/server.js ./ # buildkit               12.3kB
+RUN /bin/sh -c npm install --omit=dev # buil…   9.33MB
+COPY /app/package*.json ./ # buildkit           45.1kB
+WORKDIR /app                                    8.19kB
+CMD ["node"]                                    0B
+$ docker images multi-stage-hello --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}'
+REPOSITORY          TAG       SIZE
+multi-stage-hello   latest    249MB
+# The same pattern kept in this repo (docker-images/multi-stage-app), published on host port 8085
+$ docker build --progress=plain -t coursework-multi-stage ./multi-stage-app 2>&1 | grep -E '^#[0-9]+ \[(builder|runner)|naming to' | tail -8
+#5 [builder 1/4] FROM docker.io/library/node:18-alpine@sha256:8d6421d663b4c28fd3ebc498332f249011d118945588d0a35cb9bc4b8ca09d9e
+#6 [builder 2/4] WORKDIR /app
+#7 [builder 3/4] COPY package.json ./
+#8 [builder 4/4] RUN npm install
+#9 [runner 4/5] COPY --from=builder /app/node_modules ./node_modules
+#10 [runner 5/5] COPY server.js ./
+#11 naming to docker.io/library/coursework-multi-stage:latest done
+$ docker run -d --name coursework-multi-stage -p 8085:3000 coursework-multi-stage
+dc14583b2135eb4e1b407229281e48411c82a9aeb9f6d68e99382158b7c78c95
+$ curl -s http://localhost:8085
 Hello World from Docker multi-stage build
-
-$ docker ps --filter name=multi-stage-app
-CONTAINER ID   IMAGE                   COMMAND                  CREATED         STATUS         PORTS                    NAMES
-a8f9c1d2e3f4   coursework-multi-stage  "node server.js"         10 seconds ago  Up 9 seconds   0.0.0.0:8080->3000/tcp   multi-stage-app
-
-Three deployed application types:
-nodejs-hello -> coursework-nodejs (0.0.0.0:3001->3000/tcp)
-python-hello -> coursework-python (0.0.0.0:5001->5000/tcp)
-java-hello -> coursework-java (0.0.0.0:8081->8080/tcp)
+# Task 3 - three different application types running in Docker (images built in Session 6)
+$ docker ps --filter name=nodejs-hello --filter name=python-hello --filter name=java-hello --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'
+NAMES          IMAGE               STATUS         PORTS
+java-hello     coursework-java     Up 3 minutes   0.0.0.0:8081->8080/tcp, [::]:8081->8080/tcp
+python-hello   coursework-python   Up 3 minutes   0.0.0.0:5001->5000/tcp, [::]:5001->5000/tcp
+nodejs-hello   coursework-nodejs   Up 3 minutes   0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp
+$ curl -s http://localhost:3001
+Hello World from Node.js!
+$ curl -s http://localhost:5001
+Hello World from Python!
+$ curl -s http://localhost:8081
+<h1>Hello World from Java!</h1>
+# Everything published by this session
+$ docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Ports}}' | grep -E 'NAMES|multi-stage|nodejs-hello|python-hello|java-hello'
+NAMES                    IMAGE                                 PORTS
+coursework-multi-stage   coursework-multi-stage                0.0.0.0:8085->3000/tcp, [::]:8085->3000/tcp
+multi-stage-hello        multi-stage-hello                     0.0.0.0:8080->3000/tcp, [::]:8080->3000/tcp
+java-hello               coursework-java                       0.0.0.0:8081->8080/tcp, [::]:8081->8080/tcp
+python-hello             coursework-python                     0.0.0.0:5001->5000/tcp, [::]:5001->5000/tcp
+nodejs-hello             coursework-nodejs                     0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp

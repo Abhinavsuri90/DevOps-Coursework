@@ -1,6 +1,6 @@
 # Docker Fundamentals
 
-Student: **Abhinav**
+**Session 6** · Student: **Abhinav** (24BCS10282)
 
 This module contains six isolated Hello World applications with custom `Dockerfile` specifications built for Node.js, Python, Java, Apache, React, and Nginx.
 
@@ -49,16 +49,56 @@ docker run -d --name nginx-hello -p 8084:80 coursework-nginx
 curl --fail http://localhost:8084
 ```
 
-## 3. Real Captured Execution Response
+## 3. Real execution output
 
-```
-ERROR: failed to connect to the docker API at unix:///Users/abhinavsuri/.docker/run/docker.sock; check if the path is correct and if the daemon is running
+All six images were built and run with Docker Desktop 29.5.3 on macOS (Apple Silicon). The full transcript, including build steps, container IDs, curl responses, `docker ps` and image sizes, is in [evidence/docker-fundamentals-output.txt](evidence/docker-fundamentals-output.txt).
+
+```text
+CONTAINER ID   IMAGE               STATUS          PORTS                                         NAMES
+4a0327f69fed   coursework-nginx    Up 3 seconds    0.0.0.0:8084->80/tcp, [::]:8084->80/tcp       nginx-hello
+fe5405f0be47   coursework-react    Up 6 seconds    0.0.0.0:8083->80/tcp, [::]:8083->80/tcp       react-hello
+3513cb7c7ed1   coursework-apache   Up 22 seconds   0.0.0.0:8082->80/tcp, [::]:8082->80/tcp       apache-hello
+6b63689637a5   coursework-java     Up 26 seconds   0.0.0.0:8081->8080/tcp, [::]:8081->8080/tcp   java-hello
+30fc6349ba5a   coursework-python   Up 31 seconds   0.0.0.0:5001->5000/tcp, [::]:5001->5000/tcp   python-hello
+fd64167781c0   coursework-nodejs   Up 41 seconds   0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp   nodejs-hello
 ```
 
-*(Note: When Docker Desktop / Docker daemon is started on the host or executed inside Linux containers/Codespaces, each `docker build` packages the source code into image layers, `docker run -d` starts background containers, and `-p host:container` routes network traffic to display the Hello World responses).*
+| Image | Size | Base |
+| --- | --- | --- |
+| coursework-nginx | 93 MB | `nginx:alpine` |
+| coursework-react | 93.2 MB | `node:18-alpine` build stage → `nginx:alpine` runtime |
+| coursework-apache | 115 MB | `httpd:2.4-alpine` |
+| coursework-java | 286 MB | `eclipse-temurin:21-jdk-alpine` build → `eclipse-temurin:21-jre-alpine` runtime |
+| coursework-python | 237 MB | `python:3.11-slim` |
+| coursework-nodejs | 180 MB | `node:18-alpine` |
+
+![Build and run Node.js, Python, Java](screenshots/01-build-run-node-python-java.png)
+![Build and run Apache, React, Nginx](screenshots/02-build-run-apache-react-nginx.png)
+![docker ps and images](screenshots/03-docker-ps-images.png)
+
+### Hello World in the browser
+
+Real headless-Chrome captures of each running container, made with [scripts/capture-webpage.py](../scripts/capture-webpage.py). The address bar shows the URL that was loaded.
+
+| Node.js (3001) | Python (5001) |
+| --- | --- |
+| ![Node.js](screenshots/browser-nodejs.png) | ![Python](screenshots/browser-python.png) |
+| **Java (8081)** | **Apache (8082)** |
+| ![Java](screenshots/browser-java.png) | ![Apache](screenshots/browser-apache.png) |
+| **React (8083)** | **Nginx (8084)** |
+| ![React](screenshots/browser-react.png) | ![Nginx](screenshots/browser-nginx.png) |
+
+The React page is rendered by JavaScript (`createRoot(...).render(<App />)`) from the Vite build that the multi-stage Dockerfile copies into Nginx.
+
+Cleanup:
+
+```bash
+docker rm -f nodejs-hello python-hello java-hello apache-hello react-hello nginx-hello
+```
 
 ## 4. Key Takeaways
 
 - **Container Isolation:** Each application stack runs in its own isolated filesystem and network namespace without port conflicts on host interfaces.
 - **Port Mapping (`-p host:container`):** Maps a host machine port to the exposed container port (e.g., `-p 3001:3000`).
-- **Base Images:** Custom applications leverage minimal base images (`alpine`, `python-slim`, `openjdk-alpine`, `httpd-alpine`) to optimize container footprint.
+- **Multi-stage builds:** the Java and React images compile in one stage and copy only the output into a smaller runtime stage.
+- **Base Images:** Custom applications leverage minimal base images (`alpine`, `python:3.11-slim`, `eclipse-temurin` JDK/JRE on Alpine, `httpd:2.4-alpine`) to optimize container footprint.

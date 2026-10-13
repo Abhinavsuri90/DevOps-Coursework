@@ -1,38 +1,117 @@
-$ docker build -t coursework-nodejs ./nodejs-app
+# Run from docker-fundamentals/ on macOS (Apple Silicon) with Docker Desktop 29.5.3
+# nodejs-app
+$ docker build --progress=plain -t coursework-nodejs ./nodejs-app 2>&1 | grep -E '^#[0-9]+ (\[|naming|DONE|exporting)' | tail -6
+#8 exporting manifest sha256:ab807b7cf22f916b016896939b337aedd0c66cf37c5a5b74967438de45711abf 0.0s done
+#8 exporting config sha256:6fe8f2f622d9022b3dd98fc4c2d8cc4137090ab078a3bd93fc742bed427c26e8 done
+#8 exporting attestation manifest sha256:afa8cac35f29d3dcb366a417a48d26eda5857d5f29cd3e0679eac7c7a5e7c1c1 0.0s done
+#8 exporting manifest list sha256:7ad46bc236694b758de2a85717ac7b9e6042e73c72040649b6004a185dd663fe done
+#8 naming to docker.io/library/coursework-nodejs:latest done
+#8 DONE 0.2s
 $ docker run -d --name nodejs-hello -p 3001:3000 coursework-nodejs
-$ curl http://localhost:3001
+fd64167781c0b87f7d89a808c46214797d556e4c5bc927e45454edd564ca30f2
+$ curl -s http://localhost:3001
 Hello World from Node.js!
-
-$ docker build -t coursework-python ./python-app
+# python-app
+$ docker build --progress=plain -t coursework-python ./python-app 2>&1 | grep -E '^#[0-9]+ (\[|naming|DONE|exporting)' | tail -6
+#9 exporting manifest sha256:924c6124ab68880c79bf18f11f9161d63f8f462fb683189fb0ea81f512229950 done
+#9 exporting config sha256:75d7431e618bc04f207d4e1a7b65b09166d85272b959bda17c6d0e4bd5ff09ef done
+#9 exporting attestation manifest sha256:4e7a4345d801dec5a02b18ec03f61358043672d9b5eaa25af21749d5898d70d5 done
+#9 exporting manifest list sha256:26905ae0b95b72a1e004413c35a84fbb699fbda98b63f0e3cfc5bf23dcf117d9 done
+#9 naming to docker.io/library/coursework-python:latest done
+#9 DONE 0.6s
 $ docker run -d --name python-hello -p 5001:5000 coursework-python
-$ curl http://localhost:5001
+30fc6349ba5a3e44ecc5edcd8cc8b87852297082259fa80ce7d600993581828b
+$ curl -s http://localhost:5001
 Hello World from Python!
-
-$ docker build -t coursework-java ./java-app
+# java-app
+$ docker build --progress=plain -t coursework-java ./java-app 2>&1 | grep -E '^#[0-9]+ (\[|naming|DONE|exporting)' | tail -6
+#13 exporting config sha256:a6a10b00ca72e93a8bd31285d4f9ce77febeb3f45c7ab1df2313d9d54609e9ae done
+#13 exporting attestation manifest sha256:f244e0b5a36be4daac57728ec7878ac2ff357397c26cdee749f72fac918842c5 0.0s done
+#13 exporting manifest list sha256:2d53cd87f49e315eb0e22c30b5275fd525c2b1e2e218e0fdabf06c754184a9a5 done
+#13 naming to docker.io/library/coursework-java:latest
+#13 naming to docker.io/library/coursework-java:latest done
+#13 DONE 0.1s
 $ docker run -d --name java-hello -p 8081:8080 coursework-java
-$ curl http://localhost:8081
-Hello World from Java!
-
-$ docker build -t coursework-apache ./Apache-app
+6b63689637a5fd5898bc407c5d6b29cc12bc1a62f1e79fba9847e53cf5cd8240
+$ curl -s http://localhost:8081
+<h1>Hello World from Java!</h1>
+# Apache-app
+$ docker build --progress=plain -t coursework-apache ./Apache-app 2>&1 | grep -E '^#[0-9]+ (\[|naming|DONE|exporting)' | tail -6
+#7 exporting manifest sha256:24baf417009e22744b30502b0878c625bfc087f918d215b56b032b33a6ec6fee done
+#7 exporting config sha256:28b8a9900544e1d1ea2212c25342344b263521144b932ea6aeb603fdd58df388 done
+#7 exporting attestation manifest sha256:c9d30ec737c6dfec8c8dcb173b506374bf1e298752341d1a4c1d0eaae6f122f9 done
+#7 exporting manifest list sha256:d37fda23fd6304c42936f7a3cc1a9748311b6d2e01d8c51feba6ac5616432d93 done
+#7 naming to docker.io/library/coursework-apache:latest done
+#7 DONE 0.1s
 $ docker run -d --name apache-hello -p 8082:80 coursework-apache
-$ curl http://localhost:8082
-Hello World from Apache!
-
-$ docker build -t coursework-react ./React-app
+3513cb7c7ed1468de6356cd52e78079655941657db21b82acd0c6b37a392f38c
+$ curl -s http://localhost:8082
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Apache Hello World</title>
+</head>
+<body>
+  <h1>Hello World from Apache!</h1>
+</body>
+</html>
+# React-app
+$ docker build --progress=plain -t coursework-react ./React-app 2>&1 | grep -E '^#[0-9]+ (\[|naming|DONE|exporting)' | tail -6
+#14 exporting manifest sha256:f024a4f6fe73e42c436658329c0c32f49ba5d4daaee684b7ce0724d984499be7 done
+#14 exporting config sha256:81ad7fbe0241e44ac80824f49025b3411258fcb1dee69170961302efc403d82f done
+#14 exporting attestation manifest sha256:eabf995604063ea5f4689d721148dbb3eb9b20857246c3628459851097e9eeab done
+#14 exporting manifest list sha256:2e13227a693ef776a337b58dbd7e92db52add90edd29fb191e3dcf13fabf7db4 done
+#14 naming to docker.io/library/coursework-react:latest done
+#14 DONE 0.1s
 $ docker run -d --name react-hello -p 8083:80 coursework-react
-$ curl http://localhost:8083
-Hello World from React!
-
-$ docker build -t coursework-nginx ./nginx-app
+fe5405f0be474f58290d41634a9ee72451d5cdd8871ffec323805bc09e3aa29a
+$ curl -s http://localhost:8083
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>React Hello World</title>
+    <script type="module" crossorigin src="/assets/index-Cu03YfaU.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
+# nginx-app
+$ docker build --progress=plain -t coursework-nginx ./nginx-app 2>&1 | grep -E '^#[0-9]+ (\[|naming|DONE|exporting)' | tail -6
+#7 exporting config sha256:ad47c42fc981389d8448f9eead20c26609b18df55a679d20e05228451ac05ebf
+#7 exporting config sha256:ad47c42fc981389d8448f9eead20c26609b18df55a679d20e05228451ac05ebf done
+#7 exporting attestation manifest sha256:7bfccb85082f71befad045c8cff7547eb69ca5aba11626966ff43c646f9de1ff done
+#7 exporting manifest list sha256:9afd3ddc0c6f489d5a2830f62024b9e888f0bfb9f6bfa8980c90b6dca4f9ca1b done
+#7 naming to docker.io/library/coursework-nginx:latest done
+#7 DONE 0.1s
 $ docker run -d --name nginx-hello -p 8084:80 coursework-nginx
-$ curl http://localhost:8084
-Hello World from Nginx!
-
-$ docker ps
-CONTAINER ID   IMAGE                COMMAND                  CREATED          STATUS          PORTS                    NAMES
-a1b2c3d4e5f6   coursework-nodejs    "node server.js"         10 seconds ago   Up 9 seconds    0.0.0.0:3001->3000/tcp   nodejs-hello
-b2c3d4e5f6a1   coursework-python    "python app.py"          10 seconds ago   Up 9 seconds    0.0.0.0:5001->5000/tcp   python-hello
-c3d4e5f6a1b2   coursework-java      "java HelloWorld"        10 seconds ago   Up 9 seconds    0.0.0.0:8081->8080/tcp   java-hello
-d4e5f6a1b2c3   coursework-apache    "httpd-foreground"       10 seconds ago   Up 9 seconds    0.0.0.0:8082->80/tcp     apache-hello
-e5f6a1b2c3d4   coursework-react     "nginx -g 'daemon off'"  10 seconds ago   Up 9 seconds    0.0.0.0:8083->80/tcp     react-hello
-f6a1b2c3d4e5   coursework-nginx     "nginx -g 'daemon off'"  10 seconds ago   Up 9 seconds    0.0.0.0:8084->80/tcp     nginx-hello
+4a0327f69fedfcfd33e5743afb622bfff9c140fa47a77e89aa54f9d1c2682623
+$ curl -s http://localhost:8084
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Nginx App</title>
+</head>
+<body>
+  <h1>Hello World from Nginx!</h1>
+</body>
+</html>
+# All six containers running
+$ docker ps --filter name=-hello --format 'table {{.ID}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}\t{{.Names}}'
+CONTAINER ID   IMAGE               STATUS          PORTS                                         NAMES
+4a0327f69fed   coursework-nginx    Up 3 seconds    0.0.0.0:8084->80/tcp, [::]:8084->80/tcp       nginx-hello
+fe5405f0be47   coursework-react    Up 6 seconds    0.0.0.0:8083->80/tcp, [::]:8083->80/tcp       react-hello
+3513cb7c7ed1   coursework-apache   Up 22 seconds   0.0.0.0:8082->80/tcp, [::]:8082->80/tcp       apache-hello
+6b63689637a5   coursework-java     Up 26 seconds   0.0.0.0:8081->8080/tcp, [::]:8081->8080/tcp   java-hello
+30fc6349ba5a   coursework-python   Up 31 seconds   0.0.0.0:5001->5000/tcp, [::]:5001->5000/tcp   python-hello
+fd64167781c0   coursework-nodejs   Up 41 seconds   0.0.0.0:3001->3000/tcp, [::]:3001->3000/tcp   nodejs-hello
+$ docker images --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}' | grep -E 'REPOSITORY|coursework-(nodejs|python|java|apache|react|nginx)'
+REPOSITORY                             TAG                SIZE
+coursework-nginx                       latest             93MB
+coursework-react                       latest             93.2MB
+coursework-apache                      latest             115MB
+coursework-java                        latest             286MB
+coursework-python                      latest             237MB
+coursework-nodejs                      latest             180MB
