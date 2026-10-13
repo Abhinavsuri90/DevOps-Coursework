@@ -2,6 +2,17 @@
 
 Run from this directory after `minikube start`. All examples use the `default` namespace and are designed to be applied separately. The [Service and DNS output](evidence/services.txt) and [external access output](evidence/external-access.txt) came from the temporary Minikube run. [PNG renders of recorded output](screenshots/README.md) are included; direct desktop screenshots were not captured.
 
+## Deliverables
+
+| Task | Where |
+| --- | --- |
+| 1. All 5 Service types (+ selector-free Service) | Sections 2–7 below, YAML in [01-clusterip](01-clusterip/), [02-nodeport](02-nodeport/), [03-loadbalancer](03-loadbalancer/), [04-externalname](04-externalname/), [05-headless](05-headless/), [06-no-selector](06-no-selector/) |
+| 2. Object comparison (Deployment vs ReplicaSet, Deployment vs DaemonSet vs StatefulSet, ReplicaSet vs Service) | [kubernetes-object-comparison/README.md](kubernetes-object-comparison/README.md) |
+| 3. FQDN | [fqdn/README.md](fqdn/README.md) |
+| 4. CoreDNS (incl. DNS troubleshooting) | [coredns/README.md](coredns/README.md) |
+| Output | [evidence/](evidence/): services, external access, FQDN, CoreDNS, object comparison |
+| Screenshots | Inline below and in each sub-README ([index](screenshots/README.md)) |
+
 ## 1. Port path
 
 ```text
@@ -25,6 +36,8 @@ kubectl exec curl-client -- wget -qO- http://$(kubectl get service web-service-c
 
 The Service is reachable only from inside the cluster unless a separate ingress path is configured. EndpointSlices list the selected ready Pod addresses.
 
+![ClusterIP Service](screenshots/02-clusterip.png)
+
 ## 3. NodePort
 
 ```bash
@@ -36,6 +49,8 @@ minikube service web-service-nodeport --url
 ```
 
 Use the printed `minikube service --url` address if Docker-driver networking prevents direct access to the node IP.
+
+![NodePort Service](screenshots/03-nodeport.png)
 
 ## 4. LoadBalancer
 
@@ -52,6 +67,8 @@ curl -I "http://$(kubectl get service web-service-loadbalancer -o jsonpath='{.st
 
 Without a cloud provider or tunnel, the external IP can remain pending. A LoadBalancer Service usually also has a ClusterIP and, unless `allocateLoadBalancerNodePorts: false`, NodePorts.
 
+![LoadBalancer Service](screenshots/04-loadbalancer.png)
+
 ## 5. ExternalName
 
 ```bash
@@ -61,6 +78,8 @@ kubectl exec dns-test-client -- nslookup external-database-service.default.svc.c
 ```
 
 The alias points to `api.github.com` via DNS CNAME. It has no cluster IP and no selected Pod endpoints. The name is intentionally a DNS example; HTTPS clients should connect using the destination hostname so TLS hostname verification succeeds.
+
+![ExternalName Service](screenshots/05-externalname.png)
 
 ## 6. Headless Service
 
@@ -76,6 +95,8 @@ kubectl exec headless-dns-client -- wget -qO- http://web-stateful-0.web-service-
 
 The headless Service has `clusterIP: None` and DNS can return each ready Pod's address. The StatefulSet gives Pods stable ordinal names.
 
+![Headless Service](screenshots/06-headless.png)
+
 ## 7. Service without selectors
 
 ```bash
@@ -88,7 +109,11 @@ kubectl get endpointslice -l kubernetes.io/service-name=external-legacy-db
 
 `192.0.2.10` is a documentation-only address. Replace it with a reachable backend address before a connectivity test. On Kubernetes v1.37, no `Endpoints` object existed before manual creation; the command returned `NotFound`. A selector-free Service needs manually maintained endpoints; an EndpointSlice is the modern endpoint API, though this exercise uses an `Endpoints` object as assigned. The API warned that v1 Endpoints is deprecated.
 
+![Service without selectors](screenshots/07-selector-free.png)
+
 ## 8. FQDN and CoreDNS
+
+The detailed write-ups are in [fqdn/README.md](fqdn/README.md) and [coredns/README.md](coredns/README.md). This section is the quick check.
 
 ```bash
 kubectl get pods -n kube-system -l k8s-app=kube-dns
@@ -98,6 +123,8 @@ kubectl exec curl-client -- nslookup web-service-clusterip.default.svc.cluster.l
 ```
 
 The FQDN consists of `<service>.<namespace>.svc.<cluster-domain>`. The usual cluster domain is `cluster.local`, but clusters can change it. Search suffixes complete short names. With `ndots:5`, names with fewer than five dots are tried with search suffixes before an absolute lookup; external names can trigger extra DNS queries. An absolute name ending in `.` avoids search expansion.
+
+![FQDN and CoreDNS](screenshots/08-coredns.png)
 
 ## 9. Deployment and StatefulSet identities
 
@@ -114,6 +141,8 @@ kubectl get pods -l app=web-headless
 Deployment Pod names have a ReplicaSet hash plus a random suffix. Replacement gets a new suffix. StatefulSet replacement keeps the ordinal name `web-stateful-0`, though it is a new Pod object with a new UID.
 
 ## 10. Controller comparison
+
+The full comparison with a live demo is in [kubernetes-object-comparison/README.md](kubernetes-object-comparison/README.md).
 
 | Property | Deployment | StatefulSet | DaemonSet |
 | --- | --- | --- | --- |
@@ -133,6 +162,8 @@ Use ClusterIP for internal traffic; NodePort for simple direct node exposure; Lo
 With the Docker driver, the node IP can live on a container bridge inaccessible from the host, especially on macOS and Windows. `minikube service web-service-nodeport --url` establishes an accessible local URL. `minikube tunnel` adds routing for LoadBalancer services and may require elevated local privileges. Keep the terminal running while testing, and stop the tunnel with Ctrl-C when finished.
 
 On this macOS Docker driver, direct `<minikube-ip>:30080` access timed out, while `minikube service --url` returned a localhost URL and HTTP 200. `minikube tunnel` assigned `127.0.0.1` to the LoadBalancer, but binding privileged port 80 required a sudo prompt and the HTTP probe could not connect. The Ingress lab uses unprivileged port forwarding for host-side checks.
+
+![Minikube networking](screenshots/12-minikube-networking.png)
 
 ## Cleanup
 

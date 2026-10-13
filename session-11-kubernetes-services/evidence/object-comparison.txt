@@ -1,0 +1,190 @@
+$ kubectl apply -f session-11-kubernetes-services/kubernetes-object-comparison/controllers.yaml
+deployment.apps/compare-deploy created
+replicaset.apps/compare-rs created
+daemonset.apps/compare-ds created
+service/compare-sts created
+statefulset.apps/compare-sts created
+service/compare-web created
+$ kubectl rollout status deployment/compare-deploy --timeout=180s
+Waiting for deployment "compare-deploy" rollout to finish: 0 of 3 updated replicas are available...
+Waiting for deployment "compare-deploy" rollout to finish: 1 of 3 updated replicas are available...
+Waiting for deployment "compare-deploy" rollout to finish: 2 of 3 updated replicas are available...
+deployment "compare-deploy" successfully rolled out
+$ kubectl rollout status daemonset/compare-ds --timeout=180s
+daemon set "compare-ds" successfully rolled out
+$ kubectl rollout status statefulset/compare-sts --timeout=240s
+Waiting for 1 pods to be ready...
+partitioned roll out complete: 2 new pods have been updated...
+# One example of each controller and the Pods they created
+$ kubectl get deployment,replicaset,daemonset,statefulset -l lab=compare
+NAME                             READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/compare-deploy   3/3     3            3           2s
+
+NAME                                        DESIRED   CURRENT   READY   AGE
+replicaset.apps/compare-deploy-5f55f9f4ff   3         3         3       2s
+replicaset.apps/compare-rs                  2         2         2       2s
+
+NAME                        DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR   AGE
+daemonset.apps/compare-ds   1         1         1       1            1           <none>          2s
+
+NAME                           READY   AGE
+statefulset.apps/compare-sts   2/2     2s
+$ kubectl get pods -l lab=compare -o wide
+NAME                              READY   STATUS    RESTARTS   AGE   IP            NODE       NOMINATED NODE   READINESS GATES
+compare-deploy-5f55f9f4ff-b9vt2   1/1     Running   0          2s    10.244.0.14   minikube   <none>           <none>
+compare-deploy-5f55f9f4ff-xxdxh   1/1     Running   0          2s    10.244.0.15   minikube   <none>           <none>
+compare-deploy-5f55f9f4ff-z76gh   1/1     Running   0          2s    10.244.0.16   minikube   <none>           <none>
+compare-ds-vvnxr                  1/1     Running   0          2s    10.244.0.18   minikube   <none>           <none>
+compare-rs-tn7s6                  1/1     Running   0          2s    10.244.0.17   minikube   <none>           <none>
+compare-rs-wbsdw                  1/1     Running   0          2s    10.244.0.13   minikube   <none>           <none>
+compare-sts-0                     1/1     Running   0          2s    10.244.0.19   minikube   <none>           <none>
+compare-sts-1                     1/1     Running   0          1s    10.244.0.20   minikube   <none>           <none>
+# Ownership chain: Deployment -> ReplicaSet -> Pod; the other controllers own their Pods directly
+$ kubectl get pods -l lab=compare -o 'custom-columns=POD:.metadata.name,OWNER_KIND:.metadata.ownerReferences[0].kind,OWNER:.metadata.ownerReferences[0].name'
+POD                               OWNER_KIND    OWNER
+compare-deploy-5f55f9f4ff-b9vt2   ReplicaSet    compare-deploy-5f55f9f4ff
+compare-deploy-5f55f9f4ff-xxdxh   ReplicaSet    compare-deploy-5f55f9f4ff
+compare-deploy-5f55f9f4ff-z76gh   ReplicaSet    compare-deploy-5f55f9f4ff
+compare-ds-vvnxr                  DaemonSet     compare-ds
+compare-rs-tn7s6                  ReplicaSet    compare-rs
+compare-rs-wbsdw                  ReplicaSet    compare-rs
+compare-sts-0                     StatefulSet   compare-sts
+compare-sts-1                     StatefulSet   compare-sts
+$ kubectl get rs -l app=compare-deploy -o 'custom-columns=REPLICASET:.metadata.name,OWNER_KIND:.metadata.ownerReferences[0].kind,OWNER:.metadata.ownerReferences[0].name'
+REPLICASET                  OWNER_KIND   OWNER
+compare-deploy-5f55f9f4ff   Deployment   compare-deploy
+# Deployment rolling update: changing the image creates a NEW ReplicaSet and scales the old one to 0
+$ kubectl set image deployment/compare-deploy web=nginx:1.28-alpine
+deployment.apps/compare-deploy image updated
+$ kubectl rollout status deployment/compare-deploy --timeout=180s
+Waiting for deployment "compare-deploy" rollout to finish: 1 out of 3 new replicas have been updated...
+Waiting for deployment "compare-deploy" rollout to finish: 1 out of 3 new replicas have been updated...
+Waiting for deployment "compare-deploy" rollout to finish: 1 out of 3 new replicas have been updated...
+Waiting for deployment "compare-deploy" rollout to finish: 2 out of 3 new replicas have been updated...
+Waiting for deployment "compare-deploy" rollout to finish: 2 out of 3 new replicas have been updated...
+Waiting for deployment "compare-deploy" rollout to finish: 2 out of 3 new replicas have been updated...
+Waiting for deployment "compare-deploy" rollout to finish: 2 out of 3 new replicas have been updated...
+Waiting for deployment "compare-deploy" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "compare-deploy" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "compare-deploy" rollout to finish: 1 old replicas are pending termination...
+deployment "compare-deploy" successfully rolled out
+$ kubectl get rs -l app=compare-deploy -o 'custom-columns=REPLICASET:.metadata.name,DESIRED:.spec.replicas,READY:.status.readyReplicas,IMAGE:.spec.template.spec.containers[0].image'
+REPLICASET                  DESIRED   READY    IMAGE
+compare-deploy-5f55f9f4ff   0         <none>   nginx:1.27-alpine
+compare-deploy-65bccbf74    3         3        nginx:1.28-alpine
+$ kubectl rollout history deployment/compare-deploy
+deployment.apps/compare-deploy 
+REVISION  CHANGE-CAUSE
+1         <none>
+2         <none>
+
+# ReplicaSet alone: changing its template does NOT update running Pods (no rolling update)
+$ kubectl set image replicaset/compare-rs web=nginx:1.28-alpine
+replicaset.apps/compare-rs image updated
+$ kubectl get pods -l app=compare-rs -o 'custom-columns=POD:.metadata.name,IMAGE:.spec.containers[0].image'
+POD                IMAGE
+compare-rs-tn7s6   nginx:1.27-alpine
+compare-rs-wbsdw   nginx:1.27-alpine
+$ kubectl delete pod compare-rs-tn7s6
+pod "compare-rs-tn7s6" deleted from default namespace
+$ kubectl wait --for=condition=Ready pod -l app=compare-rs --timeout=120s
+pod/compare-rs-rz6tt condition met
+pod/compare-rs-wbsdw condition met
+$ kubectl get pods -l app=compare-rs -o 'custom-columns=POD:.metadata.name,IMAGE:.spec.containers[0].image'
+POD                IMAGE
+compare-rs-rz6tt   nginx:1.28-alpine
+compare-rs-wbsdw   nginx:1.27-alpine
+# Scaling: Deployment, ReplicaSet and StatefulSet take a replica count; a DaemonSet follows the node count
+$ kubectl scale deployment/compare-deploy --replicas=4
+deployment.apps/compare-deploy scaled
+$ kubectl scale statefulset/compare-sts --replicas=3
+statefulset.apps/compare-sts scaled
+$ kubectl rollout status statefulset/compare-sts --timeout=180s
+Waiting for 1 pods to be ready...
+partitioned roll out complete: 3 new pods have been updated...
+$ kubectl scale daemonset/compare-ds --replicas=3
+Error from server (NotFound): the server could not find the requested resource
+$ kubectl get nodes
+NAME       STATUS   ROLES           AGE    VERSION
+minikube   Ready    control-plane   173m   v1.37.0
+$ kubectl get daemonset compare-ds
+NAME         DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR   AGE
+compare-ds   1         1         1       1            1           <none>          27s
+# Storage: each StatefulSet Pod gets its own PersistentVolumeClaim from volumeClaimTemplates
+$ kubectl get pvc -l lab=compare
+NAME                 STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
+data-compare-sts-0   Bound    pvc-2fcd95c9-20d9-487a-98ac-161c9c73b6f2   100Mi      RWO            standard       <unset>                 27s
+data-compare-sts-1   Bound    pvc-4ed83bca-16ed-464d-ab98-e428da6012cc   100Mi      RWO            standard       <unset>                 26s
+data-compare-sts-2   Bound    pvc-1a0c9690-0e07-4599-9e29-05d3a190b8e8   100Mi      RWO            standard       <unset>                 1s
+# Networking: a headless Service gives each StatefulSet Pod a stable DNS name
+$ kubectl -n shop exec netclient -c dns -- nslookup compare-sts-0.compare-sts.default.svc.cluster.local
+Server:		10.96.0.10
+Address:	10.96.0.10#53
+
+Name:	compare-sts-0.compare-sts.default.svc.cluster.local
+Address: 10.244.0.19
+
+$ kubectl -n shop exec netclient -c dns -- nslookup compare-sts.default.svc.cluster.local
+Server:		10.96.0.10
+Address:	10.96.0.10#53
+
+Name:	compare-sts.default.svc.cluster.local
+Address: 10.244.0.19
+Name:	compare-sts.default.svc.cluster.local
+Address: 10.244.0.26
+Name:	compare-sts.default.svc.cluster.local
+Address: 10.244.0.20
+
+# ReplicaSet vs Service: the ReplicaSet replaces Pods (new IPs); the Service tracks them automatically
+$ kubectl get endpointslice -l kubernetes.io/service-name=compare-web
+NAME                ADDRESSTYPE   PORTS   ENDPOINTS                                         AGE
+compare-web-4s4zz   IPv4          80      10.244.0.21,10.244.0.22,10.244.0.23 + 1 more...   27s
+$ kubectl delete pod compare-deploy-65bccbf74-7wpwc
+pod "compare-deploy-65bccbf74-7wpwc" deleted from default namespace
+$ kubectl wait --for=condition=Ready pod -l app=compare-deploy --timeout=120s
+pod/compare-deploy-65bccbf74-58f4p condition met
+pod/compare-deploy-65bccbf74-8dvds condition met
+pod/compare-deploy-65bccbf74-bjzzt condition met
+pod/compare-deploy-65bccbf74-n8lwz condition met
+$ kubectl get pods -l app=compare-deploy -o wide
+NAME                             READY   STATUS    RESTARTS   AGE   IP            NODE       NOMINATED NODE   READINESS GATES
+compare-deploy-65bccbf74-58f4p   1/1     Running   0          2s    10.244.0.27   minikube   <none>           <none>
+compare-deploy-65bccbf74-8dvds   1/1     Running   0          15s   10.244.0.21   minikube   <none>           <none>
+compare-deploy-65bccbf74-bjzzt   1/1     Running   0          15s   10.244.0.22   minikube   <none>           <none>
+compare-deploy-65bccbf74-n8lwz   1/1     Running   0          14s   10.244.0.23   minikube   <none>           <none>
+$ kubectl get endpointslice -l kubernetes.io/service-name=compare-web
+NAME                ADDRESSTYPE   PORTS   ENDPOINTS                                         AGE
+compare-web-4s4zz   IPv4          80      10.244.0.21,10.244.0.22,10.244.0.23 + 1 more...   29s
+# Traffic to the stable Service name is load-balanced across whichever Pods are ready
+$ kubectl -n shop exec netclient -c curl -- sh -c 'for i in 1 2 3 4 5 6 7 8; do curl -s http://compare-web.default.svc.cluster.local; done'
+served by compare-deploy-65bccbf74-58f4p
+served by compare-deploy-65bccbf74-bjzzt
+served by compare-deploy-65bccbf74-58f4p
+served by compare-deploy-65bccbf74-8dvds
+served by compare-deploy-65bccbf74-n8lwz
+served by compare-deploy-65bccbf74-bjzzt
+served by compare-deploy-65bccbf74-n8lwz
+served by compare-deploy-65bccbf74-n8lwz
+# Full endpoint list: the replacement Pod (new IP) is already behind the Service
+$ kubectl get endpointslice -l kubernetes.io/service-name=compare-web -o jsonpath='{range .items[*].endpoints[*]}{.addresses[0]}{"  "}{.targetRef.name}{"  ready="}{.conditions.ready}{"\n"}{end}'
+10.244.0.21  compare-deploy-65bccbf74-8dvds  ready=true
+10.244.0.22  compare-deploy-65bccbf74-bjzzt  ready=true
+10.244.0.23  compare-deploy-65bccbf74-n8lwz  ready=true
+10.244.0.27  compare-deploy-65bccbf74-58f4p  ready=true
+# Cleanup (PVCs from volumeClaimTemplates are kept on purpose and must be deleted separately)
+$ kubectl delete -f session-11-kubernetes-services/kubernetes-object-comparison/controllers.yaml
+deployment.apps "compare-deploy" deleted from default namespace
+replicaset.apps "compare-rs" deleted from default namespace
+daemonset.apps "compare-ds" deleted from default namespace
+service "compare-sts" deleted from default namespace
+statefulset.apps "compare-sts" deleted from default namespace
+service "compare-web" deleted from default namespace
+$ kubectl get pvc -l lab=compare
+NAME                 STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
+data-compare-sts-0   Bound    pvc-2fcd95c9-20d9-487a-98ac-161c9c73b6f2   100Mi      RWO            standard       <unset>                 40s
+data-compare-sts-1   Bound    pvc-4ed83bca-16ed-464d-ab98-e428da6012cc   100Mi      RWO            standard       <unset>                 39s
+data-compare-sts-2   Bound    pvc-1a0c9690-0e07-4599-9e29-05d3a190b8e8   100Mi      RWO            standard       <unset>                 14s
+$ kubectl delete pvc -l lab=compare
+persistentvolumeclaim "data-compare-sts-0" deleted from default namespace
+persistentvolumeclaim "data-compare-sts-1" deleted from default namespace
+persistentvolumeclaim "data-compare-sts-2" deleted from default namespace

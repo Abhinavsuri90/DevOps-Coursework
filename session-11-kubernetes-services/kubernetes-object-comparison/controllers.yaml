@@ -1,0 +1,138 @@
+# One small example of each controller so their Pods can be compared side by side.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: compare-deploy
+  labels:
+    lab: compare
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: compare-deploy
+  template:
+    metadata:
+      labels:
+        app: compare-deploy
+        lab: compare
+    spec:
+      containers:
+        - name: web
+          image: nginx:1.27-alpine
+          # Each Pod answers with its own name so Service load balancing is visible.
+          command: ["sh", "-c", "echo \"served by $HOSTNAME\" > /usr/share/nginx/html/index.html && exec nginx -g 'daemon off;'"]
+          ports:
+            - containerPort: 80
+---
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: compare-rs
+  labels:
+    lab: compare
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: compare-rs
+  template:
+    metadata:
+      labels:
+        app: compare-rs
+        lab: compare
+    spec:
+      containers:
+        - name: web
+          image: nginx:1.27-alpine
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: compare-ds
+  labels:
+    lab: compare
+spec:
+  selector:
+    matchLabels:
+      app: compare-ds
+  template:
+    metadata:
+      labels:
+        app: compare-ds
+        lab: compare
+    spec:
+      containers:
+        - name: agent
+          image: busybox:1.36
+          command: ["sh", "-c", "while true; do echo node agent on $NODE_NAME; sleep 30; done"]
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: compare-sts
+  labels:
+    lab: compare
+spec:
+  clusterIP: None
+  selector:
+    app: compare-sts
+  ports:
+    - name: http
+      port: 80
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: compare-sts
+  labels:
+    lab: compare
+spec:
+  serviceName: compare-sts
+  replicas: 2
+  selector:
+    matchLabels:
+      app: compare-sts
+  template:
+    metadata:
+      labels:
+        app: compare-sts
+        lab: compare
+    spec:
+      containers:
+        - name: web
+          image: nginx:1.27-alpine
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: data
+              mountPath: /usr/share/nginx/html
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          lab: compare
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 100Mi
+---
+# A ClusterIP Service in front of the Deployment's Pods.
+apiVersion: v1
+kind: Service
+metadata:
+  name: compare-web
+  labels:
+    lab: compare
+spec:
+  selector:
+    app: compare-deploy
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80

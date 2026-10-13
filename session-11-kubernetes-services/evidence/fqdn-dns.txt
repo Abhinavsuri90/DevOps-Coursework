@@ -1,0 +1,115 @@
+$ kubectl apply -f session-11-kubernetes-services/fqdn/dns-lab.yaml
+namespace/shop created
+namespace/payments created
+deployment.apps/catalog created
+service/catalog created
+deployment.apps/billing created
+service/billing created
+pod/netclient created
+$ kubectl -n shop rollout status deployment/catalog --timeout=300s
+Waiting for deployment "catalog" rollout to finish: 0 of 2 updated replicas are available...
+Waiting for deployment "catalog" rollout to finish: 1 of 2 updated replicas are available...
+deployment "catalog" successfully rolled out
+$ kubectl -n payments rollout status deployment/billing --timeout=300s
+deployment "billing" successfully rolled out
+$ kubectl -n shop wait --for=condition=Ready pod/netclient --timeout=300s
+pod/netclient condition met
+$ kubectl get svc,endpointslice -n shop
+NAME              TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)   AGE
+service/catalog   ClusterIP   10.100.71.23   <none>        80/TCP    1s
+
+NAME                                           ADDRESSTYPE   PORTS   ENDPOINTS                AGE
+endpointslice.discovery.k8s.io/catalog-cz9ct   IPv4          80      10.244.0.9,10.244.0.11   1s
+$ kubectl get svc,endpointslice -n payments
+NAME              TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)   AGE
+service/billing   ClusterIP   10.107.197.207   <none>        80/TCP    2s
+
+NAME                                           ADDRESSTYPE   PORTS   ENDPOINTS               AGE
+endpointslice.discovery.k8s.io/billing-5rrxf   IPv4          80      10.244.0.8,10.244.0.7   2s
+$ kubectl -n shop exec netclient -c dns -- cat /etc/resolv.conf
+search shop.svc.cluster.local svc.cluster.local cluster.local
+nameserver 10.96.0.10
+options ndots:5
+# Same namespace: the short name is completed by the first search domain (shop.svc.cluster.local)
+$ kubectl -n shop exec netclient -c dns -- nslookup catalog
+Server:		10.96.0.10
+Address:	10.96.0.10#53
+
+Name:	catalog.shop.svc.cluster.local
+Address: 10.100.71.23
+
+# Different namespace: the short name fails because billing lives in payments, not shop
+$ kubectl -n shop exec netclient -c dns -- nslookup billing
+Server:		10.96.0.10
+Address:	10.96.0.10#53
+
+** server can't find billing: NXDOMAIN
+
+command terminated with exit code 1
+# Adding the namespace (and optionally svc / cluster.local) resolves the Service
+$ kubectl -n shop exec netclient -c dns -- nslookup billing.payments
+Server:		10.96.0.10
+Address:	10.96.0.10#53
+
+Name:	billing.payments.svc.cluster.local
+Address: 10.107.197.207
+
+$ kubectl -n shop exec netclient -c dns -- nslookup billing.payments.svc
+Server:		10.96.0.10
+Address:	10.96.0.10#53
+
+Name:	billing.payments.svc.cluster.local
+Address: 10.107.197.207
+
+$ kubectl -n shop exec netclient -c dns -- nslookup billing.payments.svc.cluster.local
+Server:		10.96.0.10
+Address:	10.96.0.10#53
+
+Name:	billing.payments.svc.cluster.local
+Address: 10.107.197.207
+
+# A trailing dot makes the name absolute, so no search domains are tried
+$ kubectl -n shop exec netclient -c dns -- nslookup billing.payments.svc.cluster.local.
+Server:		10.96.0.10
+Address:	10.96.0.10#53
+
+Name:	billing.payments.svc.cluster.local
+Address: 10.107.197.207
+
+# Named Service ports also publish SRV records: _<port-name>._<protocol>.<service>.<namespace>.svc.cluster.local
+$ kubectl -n shop exec netclient -c dns -- dig +short SRV _http._tcp.billing.payments.svc.cluster.local
+0 100 80 billing.payments.svc.cluster.local.
+# Pod A record: dashed Pod IP + namespace + pod.cluster.local
+$ kubectl -n shop exec netclient -c dns -- nslookup 10-244-0-8.payments.pod.cluster.local
+Server:		10.96.0.10
+Address:	10.96.0.10#53
+
+Name:	10-244-0-8.payments.pod.cluster.local
+Address: 10.244.0.8
+
+# Reverse lookup of the ClusterIP returns the Service FQDN
+$ kubectl -n shop exec netclient -c dns -- nslookup 10.107.197.207
+Server:		10.96.0.10
+Address:	10.96.0.10#53
+
+207.197.107.10.in-addr.arpa	name = billing.payments.svc.cluster.local.
+
+# Pod-to-Service HTTP calls using each name form
+$ kubectl -n shop exec netclient -c curl -- curl -s -o /dev/null -w "%{http_code} via http://catalog\n" http://catalog
+200 via http://catalog
+$ kubectl -n shop exec netclient -c curl -- curl -s -o /dev/null -w "%{http_code} via http://billing.payments\n" http://billing.payments
+200 via http://billing.payments
+$ kubectl -n shop exec netclient -c curl -- curl -s -o /dev/null -w "%{http_code} via http://billing.payments.svc.cluster.local\n" http://billing.payments.svc.cluster.local
+200 via http://billing.payments.svc.cluster.local
+$ kubectl -n shop exec netclient -c curl -- curl -s -m 5 -o /dev/null -w "%{http_code} via http://billing\n" http://billing
+000 via http://billing
+command terminated with exit code 6
+# Cleanup
+$ kubectl delete -f session-11-kubernetes-services/fqdn/dns-lab.yaml --wait=false
+namespace "shop" deleted
+namespace "payments" deleted
+deployment.apps "catalog" deleted from shop namespace
+service "catalog" deleted from shop namespace
+deployment.apps "billing" deleted from payments namespace
+service "billing" deleted from payments namespace
+pod "netclient" deleted from shop namespace

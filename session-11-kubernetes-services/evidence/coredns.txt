@@ -1,0 +1,142 @@
+$ kubectl -n kube-system get deployment coredns -o wide
+NAME      READY   UP-TO-DATE   AVAILABLE   AGE    CONTAINERS   IMAGES                                    SELECTOR
+coredns   1/1     1            1           155m   coredns      registry.k8s.io/coredns/coredns:v1.14.6   k8s-app=kube-dns
+$ kubectl -n kube-system get pods -l k8s-app=kube-dns -o wide
+NAME                       READY   STATUS    RESTARTS   AGE    IP           NODE       NOMINATED NODE   READINESS GATES
+coredns-559f6c778d-48v8c   1/1     Running   0          155m   10.244.0.3   minikube   <none>           <none>
+$ kubectl -n kube-system get service kube-dns
+NAME       TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)                  AGE
+kube-dns   ClusterIP   10.96.0.10   <none>        53/UDP,53/TCP,9153/TCP   155m
+$ kubectl -n kube-system get endpointslice -l kubernetes.io/service-name=kube-dns
+NAME             ADDRESSTYPE   PORTS        ENDPOINTS    AGE
+kube-dns-jccc5   IPv4          53,53,9153   10.244.0.3   155m
+# The kubelet writes this DNS server and the search list into every Pod's /etc/resolv.conf
+$ minikube ssh -- sudo grep -A3 clusterDNS /var/lib/kubelet/config.yaml
+clusterDNS:
+- 10.96.0.10
+clusterDomain: cluster.local
+containerRuntimeEndpoint: unix:///run/containerd/containerd.sock
+# CoreDNS configuration (Corefile) lives in the coredns ConfigMap
+$ kubectl -n kube-system get configmap coredns -o jsonpath='{.data.Corefile}'
+.:53 {
+    log
+    errors
+    health {
+       lameduck 5s
+    }
+    ready
+    kubernetes cluster.local in-addr.arpa ip6.arpa {
+       pods insecure
+       fallthrough in-addr.arpa ip6.arpa
+       ttl 30
+    }
+    prometheus :9153
+    hosts {
+       192.168.65.254 host.minikube.internal
+       fallthrough
+    }
+    forward . /etc/resolv.conf {
+       max_concurrent 1000
+    }
+    cache 30 {
+       disable success cluster.local
+       disable denial cluster.local
+    }
+    loop
+    reload
+    loadbalance
+}
+# Query logging is on (the log plugin), so CoreDNS shows every lookup the client tries
+$ kubectl -n shop exec netclient -c dns -- nslookup billing.payments
+Server:		10.96.0.10
+Address:	10.96.0.10#53
+
+Name:	billing.payments.svc.cluster.local
+Address: 10.107.197.207
+
+$ kubectl -n kube-system logs deployment/coredns --since=15s | grep 'billing.payments'
+[INFO] 10.244.0.10:44599 - 12325 "A IN billing.payments.shop.svc.cluster.local. udp 57 false 512" NXDOMAIN qr,aa,rd 150 0.0005955s
+[INFO] 10.244.0.10:58792 - 60369 "A IN billing.payments.svc.cluster.local. udp 52 false 512" NOERROR qr,aa,rd 102 0.000118875s
+# An external name also walks the search list first because it has fewer than 5 dots (ndots:5)
+$ kubectl -n shop exec netclient -c dns -- nslookup github.com
+Server:		10.96.0.10
+Address:	10.96.0.10#53
+
+Non-authoritative answer:
+Name:	github.com
+Address: 20.207.73.82
+
+$ kubectl -n kube-system logs deployment/coredns --since=15s | grep 'github.com'
+[INFO] 10.244.0.10:40144 - 62650 "A IN github.com.shop.svc.cluster.local. udp 51 false 512" NXDOMAIN qr,aa,rd 144 0.000673916s
+[INFO] 10.244.0.10:42559 - 38185 "A IN github.com.svc.cluster.local. udp 46 false 512" NXDOMAIN qr,aa,rd 139 0.000199292s
+[INFO] 10.244.0.10:41510 - 54713 "A IN github.com.cluster.local. udp 42 false 512" NXDOMAIN qr,aa,rd 135 0.00005125s
+[INFO] 10.244.0.10:53061 - 32681 "A IN github.com. udp 28 false 512" NOERROR qr,rd,ra 54 0.051658458s
+# CoreDNS exports Prometheus metrics on port 9153 (read here through the API server proxy)
+$ kubectl get --raw /api/v1/namespaces/kube-system/pods/coredns-559f6c778d-48v8c:9153/proxy/metrics | grep -E '^coredns_dns_responses_total' | head -6
+coredns_dns_responses_total{plugin="errors",rcode="NOERROR",server="dns://:53",view="",zone="."} 17
+coredns_dns_responses_total{plugin="errors",rcode="NXDOMAIN",server="dns://:53",view="",zone="."} 34
+# TROUBLESHOOTING 1 - DNS outage. Problem: every lookup from Pods times out.
+$ kubectl -n kube-system scale deployment coredns --replicas=0
+deployment.apps/coredns scaled
+$ kubectl -n kube-system wait --for=delete pod -l k8s-app=kube-dns --timeout=60s
+pod/coredns-559f6c778d-48v8c condition met
+$ kubectl -n shop exec netclient -c dns -- nslookup -timeout=2 -retry=1 catalog
+;; connection timed out; no servers could be reached
+
+command terminated with exit code 1
+# Investigate: the kube-dns Service still exists but has no ready endpoints behind it
+$ kubectl -n kube-system get endpointslice -l kubernetes.io/service-name=kube-dns
+NAME             ADDRESSTYPE   PORTS     ENDPOINTS   AGE
+kube-dns-jccc5   IPv4          <unset>   <unset>     172m
+$ kubectl -n kube-system get deployment coredns
+NAME      READY   UP-TO-DATE   AVAILABLE   AGE
+coredns   0/0     0            0           172m
+# Root cause: CoreDNS scaled to 0 replicas. Fix: scale it back and wait for readiness.
+$ kubectl -n kube-system scale deployment coredns --replicas=1
+deployment.apps/coredns scaled
+$ kubectl -n kube-system rollout status deployment coredns --timeout=120s
+Waiting for deployment "coredns" rollout to finish: 0 of 1 updated replicas are available...
+deployment "coredns" successfully rolled out
+$ kubectl -n kube-system get endpointslice -l kubernetes.io/service-name=kube-dns
+NAME             ADDRESSTYPE   PORTS        ENDPOINTS     AGE
+kube-dns-jccc5   IPv4          53,53,9153   10.244.0.12   172m
+$ kubectl -n shop exec netclient -c dns -- nslookup catalog
+Server:		10.96.0.10
+Address:	10.96.0.10#53
+
+Name:	catalog.shop.svc.cluster.local
+Address: 10.100.71.23
+
+# TROUBLESHOOTING 2 - DNS works but the call fails. Problem: http://catalog-v2 never answers.
+$ kubectl apply -f session-11-kubernetes-services/coredns/selector-typo-service.yaml
+service/catalog-v2 created
+$ kubectl -n shop exec netclient -c dns -- nslookup catalog-v2
+Server:		10.96.0.10
+Address:	10.96.0.10#53
+
+Name:	catalog-v2.shop.svc.cluster.local
+Address: 10.109.31.187
+
+$ kubectl -n shop exec netclient -c curl -- curl -s -m 5 -o /dev/null -w "%{http_code} via http://catalog-v2\n" http://catalog-v2
+000 via http://catalog-v2
+command terminated with exit code 7
+# Investigate: the name resolves, so DNS is fine. The Service has no endpoints.
+$ kubectl -n shop get endpointslice -l kubernetes.io/service-name=catalog-v2
+NAME               ADDRESSTYPE   PORTS     ENDPOINTS   AGE
+catalog-v2-sqlzq   IPv4          <unset>   <unset>     0s
+$ kubectl -n shop get service catalog-v2 -o jsonpath='{.spec.selector}'; echo
+{"app":"catalogue"}
+$ kubectl -n shop get pods --show-labels -l app=catalog
+NAME                       READY   STATUS    RESTARTS   AGE   LABELS
+catalog-6ff6dbc8f6-79xfz   1/1     Running   0          17m   app=catalog,pod-template-hash=6ff6dbc8f6
+catalog-6ff6dbc8f6-fk9sh   1/1     Running   0          17m   app=catalog,pod-template-hash=6ff6dbc8f6
+# Root cause: selector app=catalogue does not match Pod label app=catalog. Fix the selector.
+$ kubectl -n shop patch service catalog-v2 --type merge -p '{"spec":{"selector":{"app":"catalog"}}}'
+service/catalog-v2 patched
+$ kubectl -n shop get endpointslice -l kubernetes.io/service-name=catalog-v2
+NAME               ADDRESSTYPE   PORTS   ENDPOINTS                AGE
+catalog-v2-sqlzq   IPv4          80      10.244.0.11,10.244.0.9   4s
+$ kubectl -n shop exec netclient -c curl -- curl -s -m 5 -o /dev/null -w "%{http_code} via http://catalog-v2\n" http://catalog-v2
+200 via http://catalog-v2
+$ kubectl delete -f session-11-kubernetes-services/coredns/selector-typo-service.yaml
+service "catalog-v2" deleted from shop namespace
