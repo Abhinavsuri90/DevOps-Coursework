@@ -1,0 +1,61 @@
+# kube-prometheus-stack installed with Helm (values: 01-monitoring/kube-prometheus-stack-values.yaml)
+$ helm list -n monitoring
+NAME	NAMESPACE 	REVISION	UPDATED                             	STATUS  	CHART                       	APP VERSION
+kps 	monitoring	1       	2026-10-13 18:08:51.379456 +0530 IST	deployed	kube-prometheus-stack-92.3.1	v0.94.1    
+$ kubectl get pods -n monitoring
+NAME                                                    READY   STATUS    RESTARTS   AGE
+alertmanager-kps-kube-prometheus-stack-alertmanager-0   2/2     Running   0          2m22s
+kps-grafana-77f78f4744-5csbt                            3/3     Running   0          2m31s
+kps-kube-prometheus-stack-operator-7dc8fd6f94-knbrz     1/1     Running   0          2m31s
+kps-kube-state-metrics-5fff95b88d-tk7zm                 1/1     Running   0          2m31s
+kps-prometheus-node-exporter-p5mnr                      1/1     Running   0          2m31s
+prometheus-kps-kube-prometheus-stack-prometheus-0       2/2     Running   0          2m22s
+$ kubectl get svc -n monitoring | grep -v operated
+NAME                                     TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)                      AGE
+kps-grafana                              ClusterIP   10.109.131.252   <none>        80/TCP                       2m31s
+kps-kube-prometheus-stack-alertmanager   ClusterIP   10.110.38.247    <none>        9093/TCP,8080/TCP            2m31s
+kps-kube-prometheus-stack-operator       ClusterIP   10.99.228.253    <none>        443/TCP                      2m31s
+kps-kube-prometheus-stack-prometheus     ClusterIP   10.102.152.65    <none>        9090/TCP,8080/TCP            2m31s
+kps-kube-state-metrics                   ClusterIP   10.100.186.185   <none>        8080/TCP                     2m31s
+kps-prometheus-node-exporter             ClusterIP   10.111.82.221    <none>        9100/TCP                     2m31s
+$ kubectl get crd | grep monitoring.coreos.com
+alertmanagerconfigs.monitoring.coreos.com   Namespaced   v1alpha1(storage)   2026-10-13T12:38:49Z
+alertmanagers.monitoring.coreos.com         Namespaced   v1(storage)         2026-10-13T12:38:50Z
+podmonitors.monitoring.coreos.com           Namespaced   v1(storage)         2026-10-13T12:38:50Z
+probes.monitoring.coreos.com                Namespaced   v1(storage)         2026-10-13T12:38:50Z
+prometheusagents.monitoring.coreos.com      Namespaced   v1alpha1(storage)   2026-10-13T12:38:50Z
+prometheuses.monitoring.coreos.com          Namespaced   v1(storage)         2026-10-13T12:38:50Z
+prometheusrules.monitoring.coreos.com       Namespaced   v1(storage)         2026-10-13T12:38:50Z
+scrapeconfigs.monitoring.coreos.com         Namespaced   v1alpha1(storage)   2026-10-13T12:38:50Z
+servicemonitors.monitoring.coreos.com       Namespaced   v1(storage)         2026-10-13T12:38:50Z
+thanosrulers.monitoring.coreos.com          Namespaced   v1(storage)         2026-10-13T12:38:50Z
+# Deploy the instrumented app, its ServiceMonitor, alert rules and Grafana dashboard
+$ kubectl apply -f session20-monitoring-observability-gitops/01-monitoring/orders-service.yaml -f session20-monitoring-observability-gitops/01-monitoring/servicemonitor.yaml -f session20-monitoring-observability-gitops/01-monitoring/alert-rules.yaml -f session20-monitoring-observability-gitops/01-monitoring/grafana-dashboard.yaml
+namespace/observability created
+configmap/orders-service-code created
+deployment.apps/orders-service created
+service/orders-service created
+deployment.apps/traffic-generator created
+servicemonitor.monitoring.coreos.com/orders-service created
+prometheusrule.monitoring.coreos.com/orders-service-alerts created
+configmap/orders-service-dashboard created
+$ kubectl -n observability rollout status deployment/orders-service --timeout=180s
+Waiting for deployment "orders-service" rollout to finish: 0 of 2 updated replicas are available...
+Waiting for deployment "orders-service" rollout to finish: 1 of 2 updated replicas are available...
+deployment "orders-service" successfully rolled out
+$ kubectl -n observability rollout status deployment/traffic-generator --timeout=180s
+deployment "traffic-generator" successfully rolled out
+$ kubectl get pods,svc,servicemonitor,prometheusrule -n observability
+NAME                                     READY   STATUS    RESTARTS   AGE
+pod/orders-service-69874dcb94-d7h25      1/1     Running   0          3s
+pod/orders-service-69874dcb94-hb5kq      1/1     Running   0          3s
+pod/traffic-generator-78846bcdd8-rv2hw   1/1     Running   0          3s
+
+NAME                     TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)   AGE
+service/orders-service   ClusterIP   10.109.160.108   <none>        80/TCP    3s
+
+NAME                                                  AGE
+servicemonitor.monitoring.coreos.com/orders-service   3s
+
+NAME                                                         AGE
+prometheusrule.monitoring.coreos.com/orders-service-alerts   3s

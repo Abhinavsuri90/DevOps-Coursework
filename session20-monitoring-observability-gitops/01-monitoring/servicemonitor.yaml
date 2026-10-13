@@ -1,0 +1,16 @@
+# Tells the Prometheus Operator to scrape every orders-service endpoint on /metrics every 15s.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: orders-service
+  namespace: observability
+  labels:
+    release: kps
+spec:
+  selector:
+    matchLabels:
+      app: orders-service
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s

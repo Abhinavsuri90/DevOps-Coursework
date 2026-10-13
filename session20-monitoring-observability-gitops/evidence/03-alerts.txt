@@ -1,0 +1,69 @@
+# ALERTS: rules loaded from the PrometheusRule
+$ curl -s http://localhost:9090/api/v1/rules | python3 -c 'import json,sys; [print(r["name"], "for="+str(r.get("duration"))+"s", "health="+r["health"], "state="+r["state"]) for g in json.load(sys.stdin)["data"]["groups"] if g["name"]=="orders-service" for r in g["rules"]]'
+OrdersHighErrorRate for=60s health=ok state=inactive
+OrdersServiceDown for=60s health=ok state=inactive
+OrdersHighLatencyP95 for=120s health=ok state=inactive
+OrdersPodHighCPU for=120s health=ok state=inactive
+$ bash session20-monitoring-observability-gitops/01-monitoring/alerts.sh
+(no orders alerts pending or firing)
+# Simulate an incident: 50% of /api/orders requests fail
+$ kubectl -n observability set env deployment/orders-service ERROR_RATE=0.5
+deployment.apps/orders-service env updated
+$ kubectl -n observability rollout status deployment/orders-service --timeout=120s
+Waiting for deployment "orders-service" rollout to finish: 0 out of 2 new replicas have been updated...
+Waiting for deployment "orders-service" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "orders-service" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "orders-service" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "orders-service" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "orders-service" rollout to finish: 1 old replicas are pending termination...
+deployment "orders-service" successfully rolled out
+$ date -u +%T; bash session20-monitoring-observability-gitops/01-monitoring/alerts.sh
+12:44:20
+OrdersHighErrorRate state=pending activeAt=2026-10-13T12:44:16.872238012Z value=2.578718961160805e-01
+$ bash session20-monitoring-observability-gitops/01-monitoring/promql.sh 'sum(rate(orders_http_requests_total{status=~"5.."}[1m])) / sum(rate(orders_http_requests_total[1m]))'
+{} => 0.28625035364966844
+# After the 1m 'for' window the alert fires and is sent to Alertmanager
+$ date -u +%T; bash session20-monitoring-observability-gitops/01-monitoring/alerts.sh
+12:45:36
+OrdersHighErrorRate state=firing activeAt=2026-10-13T12:44:16.872238012Z value=4.9319750564374176e-01
+$ bash session20-monitoring-observability-gitops/01-monitoring/alerts.sh am
+OrdersHighErrorRate severity=warning state=active since=2026-10-13T12:45:16.872Z
+$ kubectl -n observability logs deploy/orders-service --tail=3
+Found 2 pods, using pod/orders-service-5c845fc8b7-tgfwm
+{"ts": "2026-10-13T12:45:36Z", "level": "info", "pod": "orders-service-5c845fc8b7-tgfwm", "path": "/api/orders", "status": 200, "duration_ms": 70.7}
+{"ts": "2026-10-13T12:45:36Z", "level": "info", "pod": "orders-service-5c845fc8b7-tgfwm", "path": "/api/orders", "status": 200, "duration_ms": 52.2}
+{"ts": "2026-10-13T12:45:36Z", "level": "error", "pod": "orders-service-5c845fc8b7-tgfwm", "path": "/api/orders", "status": 500, "duration_ms": 7.0}
+# Fix: error rate back to 2%; once the 1m window is healthy the alert resolves
+$ kubectl -n observability set env deployment/orders-service ERROR_RATE=0.02
+deployment.apps/orders-service env updated
+$ kubectl -n observability rollout status deployment/orders-service --timeout=120s
+Waiting for deployment "orders-service" rollout to finish: 0 out of 2 new replicas have been updated...
+Waiting for deployment "orders-service" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "orders-service" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "orders-service" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "orders-service" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "orders-service" rollout to finish: 1 old replicas are pending termination...
+deployment "orders-service" successfully rolled out
+$ date -u +%T; bash session20-monitoring-observability-gitops/01-monitoring/alerts.sh
+12:47:47
+(no orders alerts pending or firing)
+$ bash session20-monitoring-observability-gitops/01-monitoring/alerts.sh am
+(no orders alerts in Alertmanager)
+# APPLICATION HEALTH alert: take the service down (0 replicas)
+$ kubectl -n observability scale deployment/orders-service --replicas=0
+deployment.apps/orders-service scaled
+$ date -u +%T; bash session20-monitoring-observability-gitops/01-monitoring/alerts.sh
+12:49:33
+OrdersServiceDown state=firing activeAt=2026-10-13T12:48:16.872238012Z value=1e+00
+$ bash session20-monitoring-observability-gitops/01-monitoring/alerts.sh am
+OrdersServiceDown severity=critical state=active since=2026-10-13T12:49:16.872Z
+# Recover: scale back to 2 replicas; the alert clears
+$ kubectl -n observability scale deployment/orders-service --replicas=2
+deployment.apps/orders-service scaled
+$ kubectl -n observability rollout status deployment/orders-service --timeout=120s
+Waiting for deployment "orders-service" rollout to finish: 0 of 2 updated replicas are available...
+Waiting for deployment "orders-service" rollout to finish: 1 of 2 updated replicas are available...
+deployment "orders-service" successfully rolled out
+$ date -u +%T; bash session20-monitoring-observability-gitops/01-monitoring/alerts.sh
+12:50:05
+(no orders alerts pending or firing)

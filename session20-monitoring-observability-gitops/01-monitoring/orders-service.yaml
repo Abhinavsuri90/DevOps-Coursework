@@ -1,0 +1,185 @@
+# orders-service: a small instrumented API used for the monitoring demo.
+# - Metrics: Prometheus text format on /metrics (request counter + latency histogram)
+# - Logs:    one JSON line per request on stdout
+# - Health:  /healthz for readiness and liveness probes
+# ERROR_RATE (0..1) controls the share of /api/orders requests that fail with HTTP 500.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: orders-service-code
+  namespace: observability
+data:
+  app.py: |
+    import json, os, random, socket, threading, time
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    BUCKETS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5]
+    ERROR_RATE = float(os.environ.get("ERROR_RATE", "0.02"))
+    POD = socket.gethostname()
+    STARTED = time.time()
+    lock = threading.Lock()
+    requests_total = {}
+    buckets, sums, counts = {}, {}, {}
+
+    def observe(path, status, seconds):
+        with lock:
+            requests_total[(path, status)] = requests_total.get((path, status), 0) + 1
+            b = buckets.setdefault(path, [0] * len(BUCKETS))
+            for i, le in enumerate(BUCKETS):
+                if seconds <= le:
+                    b[i] += 1
+            sums[path] = sums.get(path, 0.0) + seconds
+            counts[path] = counts.get(path, 0) + 1
+
+    def metrics():
+        out = ["# HELP orders_http_requests_total HTTP requests by path and status.",
+               "# TYPE orders_http_requests_total counter"]
+        with lock:
+            for (path, status), n in sorted(requests_total.items()):
+                out.append(f'orders_http_requests_total{{path="{path}",status="{status}"}} {n}')
+            out += ["# HELP orders_http_request_duration_seconds Request latency in seconds.",
+                    "# TYPE orders_http_request_duration_seconds histogram"]
+            for path, b in sorted(buckets.items()):
+                for le, c in zip(BUCKETS, b):
+                    out.append(f'orders_http_request_duration_seconds_bucket{{path="{path}",le="{le}"}} {c}')
+                out.append(f'orders_http_request_duration_seconds_bucket{{path="{path}",le="+Inf"}} {counts[path]}')
+                out.append(f'orders_http_request_duration_seconds_sum{{path="{path}"}} {sums[path]:.6f}')
+                out.append(f'orders_http_request_duration_seconds_count{{path="{path}"}} {counts[path]}')
+        out += ["# HELP orders_uptime_seconds Seconds since the process started.",
+                "# TYPE orders_uptime_seconds gauge",
+                f"orders_uptime_seconds {time.time() - STARTED:.1f}"]
+        return ("\n".join(out) + "\n").encode()
+
+    class Handler(BaseHTTPRequestHandler):
+        def reply(self, status, body, ctype="application/json"):
+            self.send_response(status)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            if self.path == "/metrics":
+                return self.reply(200, metrics(), "text/plain; version=0.0.4")
+            if self.path == "/healthz":
+                return self.reply(200, b'{"status":"ok"}')
+            start = time.time()
+            if self.path.startswith("/api/orders"):
+                time.sleep(random.uniform(0.005, 0.08))
+                status = 500 if random.random() < ERROR_RATE else 200
+                body = {"error": "payment gateway timeout"} if status == 500 else {"orders": random.randint(1, 50), "pod": POD}
+            else:
+                status, body = 200, {"service": "orders-service", "pod": POD}
+            elapsed = time.time() - start
+            observe(self.path.split("?")[0], str(status), elapsed)
+            print(json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                              "level": "error" if status >= 500 else "info",
+                              "pod": POD, "path": self.path, "status": status,
+                              "duration_ms": round(elapsed * 1000, 1)}), flush=True)
+            self.reply(status, json.dumps(body).encode())
+
+        def log_message(self, *args):
+            pass
+
+    print(json.dumps({"level": "info", "msg": "orders-service starting", "pod": POD, "error_rate": ERROR_RATE}), flush=True)
+    ThreadingHTTPServer(("", 8080), Handler).serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-service
+  namespace: observability
+  labels:
+    app: orders-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: orders-service
+  template:
+    metadata:
+      labels:
+        app: orders-service
+    spec:
+      containers:
+        - name: app
+          image: python:3.12-alpine
+          command: ["python3", "/app/app.py"]
+          env:
+            - name: ERROR_RATE
+              value: "0.02"
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 96Mi
+          volumeMounts:
+            - name: code
+              mountPath: /app
+      volumes:
+        - name: code
+          configMap:
+            name: orders-service-code
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders-service
+  namespace: observability
+  labels:
+    app: orders-service
+spec:
+  selector:
+    app: orders-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Steady traffic: two loops calling the API every ~0.1 s.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traffic-generator
+  namespace: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: traffic-generator
+  template:
+    metadata:
+      labels:
+        app: traffic-generator
+    spec:
+      containers:
+        - name: busybox
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              for loop in 1 2; do
+                (while true; do wget -q -O /dev/null http://orders-service/api/orders; sleep 0.1; done) &
+              done
+              wait

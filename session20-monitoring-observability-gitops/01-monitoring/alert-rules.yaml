@@ -1,0 +1,52 @@
+# Alerting rules evaluated by Prometheus; firing alerts are sent to Alertmanager.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: orders-service-alerts
+  namespace: observability
+  labels:
+    release: kps
+spec:
+  groups:
+    - name: orders-service
+      rules:
+        - alert: OrdersHighErrorRate
+          expr: |
+            sum(rate(orders_http_requests_total{status=~"5.."}[1m]))
+              / sum(rate(orders_http_requests_total[1m])) > 0.10
+          for: 1m
+          labels:
+            severity: warning
+            team: orders
+          annotations:
+            summary: orders-service error rate is above 10%
+            description: '{{ $value | humanizePercentage }} of requests failed over the last minute.'
+        - alert: OrdersServiceDown
+          expr: sum(up{job="orders-service"}) == 0 or absent(up{job="orders-service"})
+          for: 1m
+          labels:
+            severity: critical
+            team: orders
+          annotations:
+            summary: No orders-service target is up
+            description: Prometheus cannot scrape any orders-service Pod.
+        - alert: OrdersHighLatencyP95
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le) (rate(orders_http_request_duration_seconds_bucket{path="/api/orders"}[5m]))) > 0.5
+          for: 2m
+          labels:
+            severity: warning
+            team: orders
+          annotations:
+            summary: orders-service p95 latency is above 500 ms
+        - alert: OrdersPodHighCPU
+          expr: |
+            sum by (pod) (rate(container_cpu_usage_seconds_total{namespace="observability",container="app"}[2m]))
+              / sum by (pod) (kube_pod_container_resource_limits{namespace="observability",container="app",resource="cpu"}) > 0.8
+          for: 2m
+          labels:
+            severity: warning
+            team: orders
+          annotations:
+            summary: '{{ $labels.pod }} is using more than 80% of its CPU limit'

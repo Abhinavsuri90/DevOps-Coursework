@@ -1,0 +1,53 @@
+# METRICS: the app's /metrics endpoint (Prometheus text format)
+$ kubectl -n observability exec deploy/traffic-generator -- wget -qO- http://orders-service/metrics | grep -E '^orders_http_requests_total|le="0.05"|_count|_sum|^orders_uptime' | head -9
+orders_http_requests_total{path="/api/orders",status="200"} 593
+orders_http_requests_total{path="/api/orders",status="500"} 11
+orders_http_request_duration_seconds_bucket{path="/api/orders",le="0.05"} 348
+orders_http_request_duration_seconds_sum{path="/api/orders"} 26.424667
+orders_http_request_duration_seconds_count{path="/api/orders"} 604
+orders_uptime_seconds 96.8
+# LOGS: structured JSON, one line per request
+$ kubectl -n observability logs deploy/orders-service --tail=4
+Found 2 pods, using pod/orders-service-69874dcb94-d7h25
+{"ts": "2026-10-13T12:43:13Z", "level": "info", "pod": "orders-service-69874dcb94-d7h25", "path": "/api/orders", "status": 200, "duration_ms": 43.4}
+{"ts": "2026-10-13T12:43:13Z", "level": "info", "pod": "orders-service-69874dcb94-d7h25", "path": "/api/orders", "status": 200, "duration_ms": 65.5}
+{"ts": "2026-10-13T12:43:13Z", "level": "info", "pod": "orders-service-69874dcb94-d7h25", "path": "/api/orders", "status": 200, "duration_ms": 14.7}
+{"ts": "2026-10-13T12:43:13Z", "level": "info", "pod": "orders-service-69874dcb94-d7h25", "path": "/api/orders", "status": 200, "duration_ms": 57.1}
+$ kubectl -n observability logs deploy/orders-service --tail=500 | grep -c '"level": "error"'
+Found 2 pods, using pod/orders-service-69874dcb94-d7h25
+11
+# Prometheus discovered both Pods through the ServiceMonitor
+$ curl -s 'http://localhost:9090/api/v1/targets?state=active' | python3 -c 'import json,sys; [print(t["labels"]["job"], t["labels"]["pod"], t["scrapeUrl"], "health="+t["health"]) for t in json.load(sys.stdin)["data"]["activeTargets"] if t["labels"].get("job")=="orders-service"]'
+orders-service orders-service-69874dcb94-d7h25 http://10.244.0.189:8080/metrics health=up
+orders-service orders-service-69874dcb94-hb5kq http://10.244.0.191:8080/metrics health=up
+# PromQL through the Prometheus HTTP API (bash 01-monitoring/promql.sh '<query>')
+$ bash session20-monitoring-observability-gitops/01-monitoring/promql.sh 'sum(rate(orders_http_requests_total[1m]))'
+{} => 7.179201073548043
+$ bash session20-monitoring-observability-gitops/01-monitoring/promql.sh 'sum by (status) (rate(orders_http_requests_total[1m]))'
+status=200 => 7.026064623369119
+status=500 => 0.15956537329688164
+$ bash session20-monitoring-observability-gitops/01-monitoring/promql.sh 'sum(rate(orders_http_requests_total{status=~"5.."}[1m])) / sum(rate(orders_http_requests_total[1m]))'
+{} => 0.022203919247411847
+$ bash session20-monitoring-observability-gitops/01-monitoring/promql.sh 'histogram_quantile(0.95, sum by (le) (rate(orders_http_request_duration_seconds_bucket{path="/api/orders"}[5m])))'
+{} => 0.0940584554832552
+# CPU and MEMORY utilisation per Pod (cAdvisor metrics) and kubectl top (metrics-server)
+$ bash session20-monitoring-observability-gitops/01-monitoring/promql.sh 'sum by (pod) (rate(container_cpu_usage_seconds_total{namespace="observability",container="app"}[2m]))'
+pod=orders-service-69874dcb94-hb5kq => 0.012477594444444445
+pod=orders-service-69874dcb94-d7h25 => 0.012019604166666665
+$ bash session20-monitoring-observability-gitops/01-monitoring/promql.sh 'sum by (pod) (container_memory_working_set_bytes{namespace="observability",container="app"})'
+pod=orders-service-69874dcb94-hb5kq => 16842752
+pod=orders-service-69874dcb94-d7h25 => 19075072
+$ kubectl top pods -n observability
+NAME                                 CPU(cores)   MEMORY(bytes)   
+orders-service-69874dcb94-d7h25      14m          18Mi            
+orders-service-69874dcb94-hb5kq      14m          16Mi            
+traffic-generator-78846bcdd8-rv2hw   43m          1Mi             
+# APPLICATION HEALTH: probes, scrape health and available replicas from kube-state-metrics
+$ bash session20-monitoring-observability-gitops/01-monitoring/promql.sh 'up{job="orders-service"}'
+job=orders-service pod=orders-service-69874dcb94-d7h25 => 1
+job=orders-service pod=orders-service-69874dcb94-hb5kq => 1
+$ bash session20-monitoring-observability-gitops/01-monitoring/promql.sh 'kube_deployment_status_replicas_available{namespace="observability",deployment="orders-service"}'
+deployment=orders-service job=kube-state-metrics pod=kps-kube-state-metrics-5fff95b88d-tk7zm => 2
+$ kubectl -n observability describe deploy orders-service | grep -E 'Liveness|Readiness'
+    Liveness:   http-get http://:http/healthz delay=0s timeout=1s period=10s successThreshold=1 failureThreshold=3
+    Readiness:  http-get http://:http/healthz delay=0s timeout=1s period=5s successThreshold=1 failureThreshold=3

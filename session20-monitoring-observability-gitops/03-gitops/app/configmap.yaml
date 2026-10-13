@@ -1,0 +1,13 @@
+# Page content. Change "message" in Git and Argo CD rolls it out.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gitops-web-page
+  namespace: gitops-demo
+data:
+  index.html: |
+    <!doctype html>
+    <html><body>
+    <h1>GitOps demo - version 1</h1>
+    <p>Desired state lives in Git: github.com/Abhinavsuri90/DevOps-Coursework</p>
+    </body></html>
