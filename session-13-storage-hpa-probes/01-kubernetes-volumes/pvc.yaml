@@ -1,0 +1,14 @@
+# The claim asks for 500Mi of class "manual", so it binds to student-pv instead of a dynamic volume.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: student-pvc
+  labels:
+    lab: volumes
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: manual
+  resources:
+    requests:
+      storage: 500Mi

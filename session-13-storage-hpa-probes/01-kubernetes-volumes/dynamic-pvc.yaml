@@ -1,0 +1,28 @@
+# Dynamic provisioning: no PV exists beforehand; the StorageClass creates one on demand.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dynamic-pvc
+  labels:
+    lab: volumes
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: standard
+  resources:
+    requests:
+      storage: 500Mi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: late-pvc
+  labels:
+    lab: volumes
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: lab-wait-for-consumer
+  resources:
+    requests:
+      storage: 200Mi

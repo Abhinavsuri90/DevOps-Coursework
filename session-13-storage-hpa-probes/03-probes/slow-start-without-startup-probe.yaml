@@ -1,0 +1,19 @@
+# The app needs ~25s before it listens. With only a strict liveness probe,
+# the kubelet kills it before it ever finishes starting.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: slow-start-no-startup
+  labels:
+    lab: probes
+spec:
+  containers:
+    - name: app
+      image: nginx:1.27-alpine
+      command: ["sh", "-c", "echo warming up; sleep 25; exec nginx -g 'daemon off;'"]
+      livenessProbe:
+        httpGet:
+          path: /
+          port: 80
+        periodSeconds: 3
+        failureThreshold: 2

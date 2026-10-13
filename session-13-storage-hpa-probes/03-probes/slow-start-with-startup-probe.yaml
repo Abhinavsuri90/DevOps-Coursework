@@ -1,0 +1,30 @@
+# Same slow app, plus a startup probe that allows up to 30 x 2s = 60s to start.
+# Liveness and readiness checks are held back until the startup probe succeeds.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: slow-start-with-startup
+  labels:
+    lab: probes
+spec:
+  containers:
+    - name: app
+      image: nginx:1.27-alpine
+      command: ["sh", "-c", "echo warming up; sleep 25; exec nginx -g 'daemon off;'"]
+      startupProbe:
+        httpGet:
+          path: /
+          port: 80
+        periodSeconds: 2
+        failureThreshold: 30
+      livenessProbe:
+        httpGet:
+          path: /
+          port: 80
+        periodSeconds: 3
+        failureThreshold: 2
+      readinessProbe:
+        httpGet:
+          path: /
+          port: 80
+        periodSeconds: 3

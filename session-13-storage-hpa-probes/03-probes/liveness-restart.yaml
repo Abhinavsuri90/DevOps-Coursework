@@ -1,0 +1,19 @@
+# Liveness probe on a path that returns 404: the kubelet keeps restarting the container.
+# (Instructor mini-project, bonus challenge 3.)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: probe-liveness
+  labels:
+    lab: probes
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.27-alpine
+      livenessProbe:
+        httpGet:
+          path: /crash
+          port: 80
+        initialDelaySeconds: 3
+        periodSeconds: 3
+        failureThreshold: 2

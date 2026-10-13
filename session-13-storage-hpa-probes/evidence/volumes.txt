@@ -1,0 +1,173 @@
+# 1) emptyDir - shared by the Pod's containers, removed with the Pod
+$ kubectl apply -f session-13-storage-hpa-probes/01-kubernetes-volumes/emptydir-pod.yaml
+pod/emptydir-demo created
+$ kubectl wait --for=condition=Ready pod/emptydir-demo --timeout=120s
+pod/emptydir-demo condition met
+$ kubectl exec emptydir-demo -c reader -- cat /cache/log.txt
+11:05:13 written by writer
+11:05:18 written by writer
+11:05:23 written by writer
+$ kubectl exec emptydir-demo -c reader -- df -h /cache /scratch | sed 's/  */ /g'
+Filesystem Size Used Available Use% Mounted on
+/dev/vda1 452.1G 32.4G 396.7G 8% /cache
+tmpfs 16.0M 0 16.0M 0% /scratch
+$ kubectl exec emptydir-demo -c reader -- sh -c 'echo test > /cache/x' 
+sh: can't create /cache/x: Read-only file system
+command terminated with exit code 1
+$ kubectl delete pod emptydir-demo
+pod "emptydir-demo" deleted from default namespace
+$ kubectl apply -f session-13-storage-hpa-probes/01-kubernetes-volumes/emptydir-pod.yaml
+pod/emptydir-demo created
+$ kubectl wait --for=condition=Ready pod/emptydir-demo --timeout=120s
+pod/emptydir-demo condition met
+$ kubectl exec emptydir-demo -c reader -- cat /cache/log.txt
+11:10:59 written by writer
+$ kubectl delete pod emptydir-demo --wait=false
+pod "emptydir-demo" deleted from default namespace
+# 2) hostPath - the file lives on the node, so it survives Pod deletion
+$ kubectl apply -f session-13-storage-hpa-probes/01-kubernetes-volumes/hostpath-pod.yaml
+pod/hostpath-demo created
+$ kubectl wait --for=condition=Ready pod/hostpath-demo --timeout=120s
+pod/hostpath-demo condition met
+$ kubectl exec hostpath-demo -- cat /data/visits.txt
+visit from hostpath-demo at 11:11:06
+$ kubectl delete pod hostpath-demo
+pod "hostpath-demo" deleted from default namespace
+$ docker exec minikube cat /tmp/hostpath-data/visits.txt
+visit from hostpath-demo at 11:11:06
+$ kubectl apply -f session-13-storage-hpa-probes/01-kubernetes-volumes/hostpath-pod.yaml
+pod/hostpath-demo created
+$ kubectl wait --for=condition=Ready pod/hostpath-demo --timeout=120s
+pod/hostpath-demo condition met
+$ kubectl exec hostpath-demo -- cat /data/visits.txt
+visit from hostpath-demo at 11:11:06
+visit from hostpath-demo at 11:28:53
+$ kubectl delete pod hostpath-demo --wait=false
+pod "hostpath-demo" deleted from default namespace
+# 3) Static provisioning - PersistentVolume created by an admin, claimed by a PVC
+$ kubectl apply -f session-13-storage-hpa-probes/01-kubernetes-volumes/pv.yaml
+persistentvolume/student-pv created
+$ kubectl get pv student-pv
+NAME         CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS      CLAIM   STORAGECLASS   VOLUMEATTRIBUTESCLASS   REASON   AGE
+student-pv   1Gi        RWO            Retain           Available           manual         <unset>                          0s
+$ kubectl apply -f session-13-storage-hpa-probes/01-kubernetes-volumes/pvc.yaml
+persistentvolumeclaim/student-pvc created
+$ kubectl get pv student-pv
+NAME         CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS   CLAIM                 STORAGECLASS   VOLUMEATTRIBUTESCLASS   REASON   AGE
+student-pv   1Gi        RWO            Retain           Bound    default/student-pvc   manual         <unset>                          3s
+$ kubectl get pvc student-pvc
+NAME          STATUS   VOLUME       CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
+student-pvc   Bound    student-pv   1Gi        RWO            manual         <unset>                 3s
+$ kubectl apply -f session-13-storage-hpa-probes/01-kubernetes-volumes/pv-pod.yaml
+pod/storage-demo created
+$ kubectl wait --for=condition=Ready pod/storage-demo --timeout=120s
+pod/storage-demo condition met
+$ kubectl exec storage-demo -- sh -c 'echo "Student: Abhinav (24BCS10282)" > /data/student.txt && cat /data/student.txt'
+Student: Abhinav (24BCS10282)
+# Delete the Pod and the claim; reclaimPolicy Retain keeps the volume and its data
+$ kubectl delete pod storage-demo --grace-period=1
+pod "storage-demo" deleted from default namespace
+$ kubectl delete pvc student-pvc
+persistentvolumeclaim "student-pvc" deleted from default namespace
+$ kubectl get pv student-pv
+NAME         CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS     CLAIM                 STORAGECLASS   VOLUMEATTRIBUTESCLASS   REASON   AGE
+student-pv   1Gi        RWO            Retain           Released   default/student-pvc   manual         <unset>                          7s
+$ docker exec minikube cat /tmp/student-data/student.txt
+Student: Abhinav (24BCS10282)
+$ kubectl delete pv student-pv
+persistentvolume "student-pv" deleted
+# 4) StorageClass and dynamic provisioning
+$ kubectl get storageclass
+NAME                 PROVISIONER                RECLAIMPOLICY   VOLUMEBINDINGMODE   ALLOWVOLUMEEXPANSION   AGE
+standard (default)   k8s.io/minikube-hostpath   Delete          Immediate           false                  4h17m
+$ kubectl apply -f session-13-storage-hpa-probes/01-kubernetes-volumes/storageclass.yaml
+storageclass.storage.k8s.io/lab-wait-for-consumer created
+$ kubectl get storageclass lab-wait-for-consumer
+NAME                    PROVISIONER                RECLAIMPOLICY   VOLUMEBINDINGMODE      ALLOWVOLUMEEXPANSION   AGE
+lab-wait-for-consumer   k8s.io/minikube-hostpath   Delete          WaitForFirstConsumer   false                  0s
+$ kubectl apply -f session-13-storage-hpa-probes/01-kubernetes-volumes/dynamic-pvc.yaml
+persistentvolumeclaim/dynamic-pvc created
+persistentvolumeclaim/late-pvc created
+# standard (Immediate) binds at once; lab-wait-for-consumer waits for a Pod
+$ kubectl get pvc dynamic-pvc late-pvc
+NAME          STATUS    VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS            VOLUMEATTRIBUTESCLASS   AGE
+dynamic-pvc   Bound     pvc-6f5c7ca0-6594-4da2-8198-dec26e1a1349   500Mi      RWO            standard                <unset>                 5s
+late-pvc      Pending                                                                        lab-wait-for-consumer   <unset>                 5s
+$ kubectl describe pvc late-pvc | sed -n '/^Events:/,$p'
+Events:
+  Type    Reason                Age   From                         Message
+  ----    ------                ----  ----                         -------
+  Normal  WaitForFirstConsumer  5s    persistentvolume-controller  waiting for first consumer to be created before binding
+$ kubectl apply -f session-13-storage-hpa-probes/01-kubernetes-volumes/dynamic-pod.yaml
+pod/dynamic-demo created
+$ kubectl wait --for=condition=Ready pod/dynamic-demo --timeout=120s
+error: timed out waiting for the condition on pods/dynamic-demo
+$ kubectl get pvc dynamic-pvc late-pvc
+NAME          STATUS    VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS            VOLUMEATTRIBUTESCLASS   AGE
+dynamic-pvc   Bound     pvc-6f5c7ca0-6594-4da2-8198-dec26e1a1349   500Mi      RWO            standard                <unset>                 2m6s
+late-pvc      Pending                                                                        lab-wait-for-consumer   <unset>                 2m6s
+$ kubectl get pv -o 'custom-columns=PV:.metadata.name,CAPACITY:.spec.capacity.storage,RECLAIM:.spec.persistentVolumeReclaimPolicy,CLASS:.spec.storageClassName,CLAIM:.spec.claimRef.name,STATUS:.status.phase'
+PV                                         CAPACITY   RECLAIM   CLASS      CLAIM         STATUS
+pvc-6f5c7ca0-6594-4da2-8198-dec26e1a1349   500Mi      Delete    standard   dynamic-pvc   Bound
+$ kubectl exec dynamic-demo -- cat /data/hello.txt
+error: unable to upgrade connection: pod dynamic-demo does not have a host assigned
+# reclaimPolicy Delete: removing the claims deletes the dynamically provisioned volumes
+$ kubectl delete pod dynamic-demo --grace-period=1
+pod "dynamic-demo" deleted from default namespace
+$ kubectl delete -f session-13-storage-hpa-probes/01-kubernetes-volumes/dynamic-pvc.yaml
+persistentvolumeclaim "dynamic-pvc" deleted from default namespace
+persistentvolumeclaim "late-pvc" deleted from default namespace
+$ kubectl get pv 2>&1
+No resources found
+$ kubectl delete -f session-13-storage-hpa-probes/01-kubernetes-volumes/storageclass.yaml
+storageclass.storage.k8s.io "lab-wait-for-consumer" deleted
+# TROUBLESHOOTING: late-pvc never bound. The StorageClass, claims and Pod were re-applied to investigate.
+$ kubectl get pvc late-pvc
+NAME       STATUS    VOLUME   CAPACITY   ACCESS MODES   STORAGECLASS            VOLUMEATTRIBUTESCLASS   AGE
+late-pvc   Pending                                      lab-wait-for-consumer   <unset>                 57s
+$ kubectl get pod dynamic-demo -o wide
+NAME           READY   STATUS    RESTARTS   AGE   IP       NODE     NOMINATED NODE   READINESS GATES
+dynamic-demo   0/1     Pending   0          57s   <none>   <none>   minikube         <none>
+$ kubectl describe pvc late-pvc | sed -n '/^Events:/,$p' | cut -c1-250
+Events:
+  Type     Reason                Age                From                                                                    Message
+  ----     ------                ----               ----                                                                    -------
+  Normal   WaitForFirstConsumer  57s                persistentvolume-controller                                             waiting for first consumer to be created before binding
+  Warning  ProvisioningFailed    11s (x3 over 56s)  k8s.io/minikube-hostpath_minikube_d93f79e9-51fa-4391-b9b3-51220320442f  failed to get target node: nodes "minikube" is forbidden: User "system:serviceaccount:kube-system:storage-provisioner" cannot 
+  Normal   ExternalProvisioning  9s (x6 over 56s)   persistentvolume-controller                                             Waiting for a volume to be created either by the external provisioner 'k8s.io/minikube-hostpath' or manually by the system adm
+$ kubectl auth can-i get nodes --as=system:serviceaccount:kube-system:storage-provisioner
+Warning: resource 'nodes' is not namespace scoped
+
+no
+# Root cause: the provisioner's ServiceAccount cannot read the selected Node, so it cannot provision there
+$ kubectl apply -f session-13-storage-hpa-probes/01-kubernetes-volumes/provisioner-rbac-fix.yaml
+clusterrole.rbac.authorization.k8s.io/storage-provisioner-node-reader created
+clusterrolebinding.rbac.authorization.k8s.io/storage-provisioner-node-reader created
+$ kubectl auth can-i get nodes --as=system:serviceaccount:kube-system:storage-provisioner
+Warning: resource 'nodes' is not namespace scoped
+
+yes
+$ kubectl wait --for=jsonpath={.status.phase}=Bound pvc/late-pvc --timeout=180s
+persistentvolumeclaim/late-pvc condition met
+$ kubectl wait --for=condition=Ready pod/dynamic-demo --timeout=180s
+pod/dynamic-demo condition met
+$ kubectl get pvc late-pvc
+NAME       STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS            VOLUMEATTRIBUTESCLASS   AGE
+late-pvc   Bound    pvc-5feeb977-03f2-4cf4-b377-30a0ec19ef4d   200Mi      RWO            lab-wait-for-consumer   <unset>                 109s
+$ kubectl describe pvc late-pvc | sed -n '/^Events:/,$p' | tail -3 | cut -c1-200
+  Normal   ExternalProvisioning   16s (x9 over 108s)  persistentvolume-controller                                             Waiting for a volume to be created either by the external provisioner 'k8s
+  Normal   Provisioning           3s                  k8s.io/minikube-hostpath_minikube_d93f79e9-51fa-4391-b9b3-51220320442f  External provisioner is provisioning volume for claim "default/late-pvc"
+  Normal   ProvisioningSucceeded  3s                  k8s.io/minikube-hostpath_minikube_d93f79e9-51fa-4391-b9b3-51220320442f  Successfully provisioned volume pvc-5feeb977-03f2-4cf4-b377-30a0ec19ef4d
+$ kubectl exec dynamic-demo -- cat /data/hello.txt
+provisioned on demand
+# Cleanup (the RBAC fix is removed again to leave Minikube's defaults untouched)
+$ kubectl delete pod dynamic-demo --grace-period=1
+pod "dynamic-demo" deleted from default namespace
+$ kubectl delete -f session-13-storage-hpa-probes/01-kubernetes-volumes/dynamic-pvc.yaml -f session-13-storage-hpa-probes/01-kubernetes-volumes/storageclass.yaml -f session-13-storage-hpa-probes/01-kubernetes-volumes/provisioner-rbac-fix.yaml
+persistentvolumeclaim "dynamic-pvc" deleted from default namespace
+persistentvolumeclaim "late-pvc" deleted from default namespace
+storageclass.storage.k8s.io "lab-wait-for-consumer" deleted
+clusterrole.rbac.authorization.k8s.io "storage-provisioner-node-reader" deleted
+clusterrolebinding.rbac.authorization.k8s.io "storage-provisioner-node-reader" deleted
+$ kubectl get pv
+No resources found

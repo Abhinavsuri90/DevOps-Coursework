@@ -1,0 +1,172 @@
+# Step 5.1-5.4: namespace, PVC, Deployment + Service, HPA
+$ kubectl apply -f session-13-storage-hpa-probes/mini-project/namespace.yaml
+namespace/production-webapp created
+$ kubectl apply -f session-13-storage-hpa-probes/mini-project/pvc.yaml
+persistentvolumeclaim/web-data created
+$ kubectl apply -f session-13-storage-hpa-probes/mini-project/deployment.yaml -f session-13-storage-hpa-probes/mini-project/service.yaml
+deployment.apps/web-app created
+service/web-service created
+$ kubectl -n production-webapp rollout status deployment/web-app --timeout=240s
+Waiting for deployment "web-app" rollout to finish: 0 of 2 updated replicas are available...
+Waiting for deployment "web-app" rollout to finish: 1 of 2 updated replicas are available...
+deployment "web-app" successfully rolled out
+$ kubectl apply -f session-13-storage-hpa-probes/mini-project/hpa.yaml
+horizontalpodautoscaler.autoscaling/web-app-hpa created
+$ kubectl get all,pvc -n production-webapp
+NAME                           READY   STATUS    RESTARTS   AGE
+pod/web-app-796db64489-mwdgj   1/1     Running   0          9s
+pod/web-app-796db64489-x6rjj   1/1     Running   0          9s
+
+NAME                  TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)   AGE
+service/web-service   ClusterIP   10.106.121.182   <none>        80/TCP    9s
+
+NAME                      READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/web-app   2/2     2            2           9s
+
+NAME                                 DESIRED   CURRENT   READY   AGE
+replicaset.apps/web-app-796db64489   2         2         2       9s
+
+NAME                                              REFERENCE            TARGETS              MINPODS   MAXPODS   REPLICAS   AGE
+horizontalpodautoscaler.autoscaling/web-app-hpa   Deployment/web-app   cpu: <unknown>/50%   2         5         2          0s
+
+NAME                             STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
+persistentvolumeclaim/web-data   Bound    pvc-65f739d1-27a2-4265-8c29-2deab2504976   500Mi      RWO            standard       <unset>                 9s
+# Task 1: storage persistence
+$ kubectl exec -n production-webapp web-app-796db64489-mwdgj -- sh -c 'echo "Student: Abhinav (24BCS10282)" > /data/student.txt'
+$ kubectl exec -n production-webapp web-app-796db64489-mwdgj -- cat /data/student.txt
+Student: Abhinav (24BCS10282)
+$ kubectl delete pod -n production-webapp web-app-796db64489-mwdgj
+pod "web-app-796db64489-mwdgj" deleted from production-webapp namespace
+$ kubectl -n production-webapp rollout status deployment/web-app --timeout=240s
+Waiting for deployment "web-app" rollout to finish: 1 of 2 updated replicas are available...
+deployment "web-app" successfully rolled out
+$ kubectl get pods -n production-webapp -l app=web-app
+NAME                       READY   STATUS    RESTARTS   AGE
+web-app-796db64489-cwq5x   1/1     Running   0          8s
+web-app-796db64489-x6rjj   1/1     Running   0          18s
+$ kubectl exec -n production-webapp web-app-796db64489-cwq5x -- cat /data/student.txt
+Student: Abhinav (24BCS10282)
+# Task 2: service verification through kubectl port-forward
+$ curl -s http://localhost:18081 | head -4
+<!DOCTYPE html>
+<html>
+<head>
+<title>Welcome to nginx!</title>
+$ kubectl get endpointslice -n production-webapp -l kubernetes.io/service-name=web-service
+NAME                ADDRESSTYPE   PORTS   ENDPOINTS                 AGE
+web-service-ccvbx   IPv4          80      10.244.0.85,10.244.0.86   29s
+# Task 3: traffic spike -> HPA scale-out (load: 3 Pods x 4 wget loops)
+$ kubectl apply -f session-13-storage-hpa-probes/mini-project/load-generator.yaml
+deployment.apps/load-generator created
+$ printf 'TIME      '; kubectl get hpa web-app-hpa -n production-webapp | head -1; for i in $(seq 1 10); do printf '%s  ' "$(date +%T)"; kubectl get hpa web-app-hpa -n production-webapp --no-headers; sleep 20; done
+TIME      NAME          REFERENCE            TARGETS              MINPODS   MAXPODS   REPLICAS   AGE
+17:22:52  web-app-hpa   Deployment/web-app   cpu: <unknown>/50%   2     5     2     20s
+17:23:12  web-app-hpa   Deployment/web-app   cpu: <unknown>/50%   2     5     2     40s
+17:23:32  web-app-hpa   Deployment/web-app   cpu: <unknown>/50%   2     5     2     60s
+17:23:52  web-app-hpa   Deployment/web-app   cpu: <unknown>/50%   2     5     2     81s
+17:24:13  web-app-hpa   Deployment/web-app   cpu: <unknown>/50%   2     5     2     101s
+17:24:33  web-app-hpa   Deployment/web-app   cpu: 15%/50%   2     5     2     2m1s
+17:24:53  web-app-hpa   Deployment/web-app   cpu: 15%/50%   2     5     2     2m21s
+17:25:13  web-app-hpa   Deployment/web-app   cpu: 15%/50%   2     5     2     2m42s
+17:25:34  web-app-hpa   Deployment/web-app   cpu: 14%/50%   2     5     2     3m2s
+17:25:54  web-app-hpa   Deployment/web-app   cpu: 14%/50%   2     5     2     3m22s
+$ kubectl top pods -n production-webapp -l app=web-app
+NAME                       CPU(cores)   MEMORY(bytes)   
+web-app-796db64489-cwq5x   20m          7Mi             
+web-app-796db64489-x6rjj   24m          7Mi             
+$ kubectl get pods -n production-webapp -l app=web-app
+NAME                       READY   STATUS    RESTARTS   AGE
+web-app-796db64489-cwq5x   1/1     Running   0          3m41s
+web-app-796db64489-x6rjj   1/1     Running   0          3m51s
+# Observation: 12 busybox wget loops only reach ~15% CPU (new process per request, nginx serves static files cheaply).
+# Switch the load generator to ApacheBench (ab -k, keep-alive, 16 concurrent connections per Pod)
+$ kubectl apply -f session-13-storage-hpa-probes/mini-project/load-generator.yaml
+deployment.apps/load-generator configured
+$ kubectl -n production-webapp rollout status deployment/load-generator --timeout=120s
+Waiting for deployment "load-generator" rollout to finish: 0 out of 2 new replicas have been updated...
+Waiting for deployment "load-generator" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "load-generator" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "load-generator" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "load-generator" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "load-generator" rollout to finish: 1 old replicas are pending termination...
+deployment "load-generator" successfully rolled out
+$ printf 'TIME      '; kubectl get hpa web-app-hpa -n production-webapp | head -1; for i in $(seq 1 9); do printf '%s  ' "$(date +%T)"; kubectl get hpa web-app-hpa -n production-webapp --no-headers; sleep 20; done
+TIME      NAME          REFERENCE            TARGETS        MINPODS   MAXPODS   REPLICAS   AGE
+17:26:53  web-app-hpa   Deployment/web-app   cpu: 22%/50%   2     5     2     4m21s
+17:27:13  web-app-hpa   Deployment/web-app   cpu: 22%/50%   2     5     2     4m41s
+17:27:33  web-app-hpa   Deployment/web-app   cpu: 60%/50%   2     5     3     5m1s
+17:27:53  web-app-hpa   Deployment/web-app   cpu: 60%/50%   2     5     3     5m21s
+17:28:13  web-app-hpa   Deployment/web-app   cpu: 60%/50%   2     5     3     5m42s
+17:28:34  web-app-hpa   Deployment/web-app   cpu: 197%/50%   2     5     5     6m2s
+17:28:54  web-app-hpa   Deployment/web-app   cpu: 197%/50%   2     5     5     6m22s
+17:29:14  web-app-hpa   Deployment/web-app   cpu: 197%/50%   2     5     5     6m42s
+17:29:34  web-app-hpa   Deployment/web-app   cpu: 190%/50%   2     5     5     7m3s
+$ kubectl top pods -n production-webapp -l app=web-app
+NAME                       CPU(cores)   MEMORY(bytes)   
+web-app-796db64489-9d7n4   161m         7Mi             
+web-app-796db64489-cwq5x   180m         7Mi             
+web-app-796db64489-dj866   144m         6Mi             
+web-app-796db64489-gttjt   196m         6Mi             
+web-app-796db64489-x6rjj   194m         7Mi             
+$ kubectl get pods -n production-webapp -l app=web-app
+NAME                       READY   STATUS    RESTARTS   AGE
+web-app-796db64489-9d7n4   1/1     Running   0          97s
+web-app-796db64489-cwq5x   1/1     Running   0          7m22s
+web-app-796db64489-dj866   1/1     Running   0          97s
+web-app-796db64489-gttjt   1/1     Running   0          2m37s
+web-app-796db64489-x6rjj   1/1     Running   0          7m32s
+$ kubectl describe hpa web-app-hpa -n production-webapp | sed -n '/^Events:/,$p' | grep -E 'SuccessfulRescale|Events|Type'
+Events:
+  Type     Reason                        Age                    From                       Message
+  Normal   SuccessfulRescale             2m37s                  horizontal-pod-autoscaler  New size: 3; reason: cpu resource utilization (percentage of request) above target
+  Normal   SuccessfulRescale             97s                    horizontal-pod-autoscaler  New size: 5; reason: cpu resource utilization (percentage of request) above target
+# A Pod created by the HPA mounts the same PVC, so it sees the same file
+$ kubectl exec -n production-webapp web-app-796db64489-dj866 -- cat /data/student.txt
+Student: Abhinav (24BCS10282)
+# Stop the load and watch the scale-in (default 300s scale-down stabilization window)
+$ kubectl delete -f session-13-storage-hpa-probes/mini-project/load-generator.yaml
+deployment.apps "load-generator" deleted from production-webapp namespace
+$ printf 'TIME      '; kubectl get hpa web-app-hpa -n production-webapp | head -1; for i in $(seq 1 13); do printf '%s  ' "$(date +%T)"; kubectl get hpa web-app-hpa -n production-webapp --no-headers; sleep 30; done
+TIME      NAME          REFERENCE            TARGETS         MINPODS   MAXPODS   REPLICAS   AGE
+17:30:05  web-app-hpa   Deployment/web-app   cpu: 190%/50%   2     5     5     7m33s
+17:30:35  web-app-hpa   Deployment/web-app   cpu: 181%/50%   2     5     5     8m3s
+17:31:05  web-app-hpa   Deployment/web-app   cpu: 181%/50%   2     5     5     8m33s
+17:31:36  web-app-hpa   Deployment/web-app   cpu: 96%/50%   2     5     5     9m4s
+17:32:06  web-app-hpa   Deployment/web-app   cpu: 96%/50%   2     5     5     9m34s
+17:32:36  web-app-hpa   Deployment/web-app   cpu: 1%/50%   2     5     5     10m
+17:33:06  web-app-hpa   Deployment/web-app   cpu: 1%/50%   2     5     5     10m
+17:33:37  web-app-hpa   Deployment/web-app   cpu: 1%/50%   2     5     5     11m
+17:34:07  web-app-hpa   Deployment/web-app   cpu: 1%/50%   2     5     5     11m
+17:34:37  web-app-hpa   Deployment/web-app   cpu: 1%/50%   2     5     5     12m
+17:35:07  web-app-hpa   Deployment/web-app   cpu: 1%/50%   2     5     5     12m
+17:35:38  web-app-hpa   Deployment/web-app   cpu: 1%/50%   2     5     5     13m
+17:36:08  web-app-hpa   Deployment/web-app   cpu: 1%/50%   2     5     5     13m
+$ kubectl describe hpa web-app-hpa -n production-webapp | sed -n '/^Events:/,$p' | grep -E 'SuccessfulRescale|Events|Type'
+Events:
+  Type     Reason                        Age                From                       Message
+  Normal   SuccessfulRescale             9m20s              horizontal-pod-autoscaler  New size: 3; reason: cpu resource utilization (percentage of request) above target
+  Normal   SuccessfulRescale             8m20s              horizontal-pod-autoscaler  New size: 5; reason: cpu resource utilization (percentage of request) above target
+$ kubectl get pods -n production-webapp
+NAME                       READY   STATUS    RESTARTS   AGE
+web-app-796db64489-9d7n4   1/1     Running   0          8m20s
+web-app-796db64489-cwq5x   1/1     Running   0          14m
+web-app-796db64489-dj866   1/1     Running   0          8m20s
+web-app-796db64489-gttjt   1/1     Running   0          9m20s
+web-app-796db64489-x6rjj   1/1     Running   0          14m
+$ for i in $(seq 1 6); do printf '%s  ' "$(date +%T)"; kubectl get hpa web-app-hpa -n production-webapp --no-headers; r=$(kubectl get hpa web-app-hpa -n production-webapp -o jsonpath='{.status.currentReplicas}'); [ "$r" = 2 ] && break; sleep 30; done
+17:36:48  web-app-hpa   Deployment/web-app   cpu: 1%/50%   2     5     5     14m
+17:37:18  web-app-hpa   Deployment/web-app   cpu: 1%/50%   2     5     5     14m
+17:37:49  web-app-hpa   Deployment/web-app   cpu: 1%/50%   2     5     2     15m
+$ kubectl describe hpa web-app-hpa -n production-webapp | sed -n '/^Events:/,$p' | grep -E 'SuccessfulRescale|Events|Type'
+Events:
+  Type     Reason                        Age                From                       Message
+  Normal   SuccessfulRescale             10m                horizontal-pod-autoscaler  New size: 3; reason: cpu resource utilization (percentage of request) above target
+  Normal   SuccessfulRescale             9m31s              horizontal-pod-autoscaler  New size: 5; reason: cpu resource utilization (percentage of request) above target
+  Normal   SuccessfulRescale             45s                horizontal-pod-autoscaler  New size: 2; reason: All metrics below target
+$ kubectl get pods -n production-webapp
+NAME                       READY   STATUS    RESTARTS   AGE
+web-app-796db64489-cwq5x   1/1     Running   0          15m
+web-app-796db64489-gttjt   1/1     Running   0          11m
+# Cleanup
+$ kubectl delete namespace production-webapp
+namespace "production-webapp" deleted

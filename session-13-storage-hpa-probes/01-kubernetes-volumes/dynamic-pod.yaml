@@ -1,0 +1,19 @@
+# The first consumer of late-pvc; scheduling this Pod triggers provisioning.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dynamic-demo
+  labels:
+    lab: volumes
+spec:
+  containers:
+    - name: app
+      image: busybox:1.36
+      command: ["sh", "-c", "echo provisioned on demand > /data/hello.txt; sleep 3600"]
+      volumeMounts:
+        - name: on-demand
+          mountPath: /data
+  volumes:
+    - name: on-demand
+      persistentVolumeClaim:
+        claimName: late-pvc

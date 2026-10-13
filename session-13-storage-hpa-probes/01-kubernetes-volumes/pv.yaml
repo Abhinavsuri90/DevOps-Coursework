@@ -1,0 +1,16 @@
+# Static provisioning: an administrator creates the PersistentVolume up front.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: student-pv
+  labels:
+    lab: volumes
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: manual
+  hostPath:
+    path: /tmp/student-data

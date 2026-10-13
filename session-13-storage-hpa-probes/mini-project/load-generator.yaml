@@ -1,0 +1,26 @@
+# Traffic spike for Task 3.
+# First attempt: busybox "while true; do wget ...; done" loops (3 Pods x 4 loops) only pushed
+# nginx to ~15% CPU, because each wget is a new process and nginx serves static files cheaply.
+# ApacheBench (ab, shipped in the httpd image) with keep-alive generates far more requests/s.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: load-generator
+  namespace: production-webapp
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: load-generator
+  template:
+    metadata:
+      labels:
+        app: load-generator
+    spec:
+      containers:
+        - name: ab
+          image: httpd:2.4-alpine
+          command:
+            - sh
+            - -c
+            - while true; do ab -q -k -c 16 -n 500000 http://web-service/ > /dev/null 2>&1; done

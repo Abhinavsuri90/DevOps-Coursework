@@ -1,0 +1,67 @@
+# 1) Readiness probe gates traffic: Running but not Ready, so the Service will not route to it (client: busybox Pod probe-client)
+$ kubectl apply -f session-13-storage-hpa-probes/03-probes/readiness-gate.yaml
+deployment.apps/probe-readiness created
+service/probe-readiness created
+$ kubectl get pods -l app=probe-readiness
+NAME                               READY   STATUS    RESTARTS   AGE
+probe-readiness-78f7dd88fb-6fbwd   0/1     Running   0          15s
+$ kubectl get endpointslice -l kubernetes.io/service-name=probe-readiness -o jsonpath='{range .items[*].endpoints[*]}{.addresses[0]}  ready={.conditions.ready}{"\n"}{end}'
+10.244.0.79  ready=false
+$ kubectl describe pod -l app=probe-readiness | sed -n '/^Events:/,$p' | grep Unhealthy | tail -1 | cut -c1-160
+  Warning  Unhealthy  2s (x5 over 14s)  kubelet            spec.containers{nginx}: Readiness probe failed: HTTP probe failed with statuscode: 404
+$ kubectl exec probe-client -- wget -qO- -T 3 http://probe-readiness
+wget: can't connect to remote host (10.96.193.11): Connection refused
+command terminated with exit code 1
+# Fix: point the readiness probe at a path that exists
+$ kubectl patch deployment probe-readiness --type json -p '[{"op":"replace","path":"/spec/template/spec/containers/0/readinessProbe/httpGet/path","value":"/"}]'
+deployment.apps/probe-readiness patched
+$ kubectl rollout status deployment/probe-readiness --timeout=120s
+Waiting for deployment "probe-readiness" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "probe-readiness" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "probe-readiness" rollout to finish: 1 old replicas are pending termination...
+deployment "probe-readiness" successfully rolled out
+$ kubectl get pods -l app=probe-readiness
+NAME                               READY   STATUS    RESTARTS   AGE
+probe-readiness-58d79d654f-jvhjr   1/1     Running   0          4s
+$ kubectl get endpointslice -l kubernetes.io/service-name=probe-readiness -o jsonpath='{range .items[*].endpoints[*]}{.addresses[0]}  ready={.conditions.ready}{"\n"}{end}'
+10.244.0.80  ready=true
+$ kubectl exec probe-client -- wget -qO- -T 3 http://probe-readiness | grep -o '<title>.*</title>'
+<title>Welcome to nginx!</title>
+$ kubectl delete -f session-13-storage-hpa-probes/03-probes/readiness-gate.yaml
+deployment.apps "probe-readiness" deleted from default namespace
+service "probe-readiness" deleted from default namespace
+# 2) Liveness probe restarts an unhealthy container
+$ kubectl apply -f session-13-storage-hpa-probes/03-probes/liveness-restart.yaml
+pod/probe-liveness created
+$ kubectl get pod probe-liveness
+NAME             READY   STATUS    RESTARTS     AGE
+probe-liveness   1/1     Running   4 (1s ago)   40s
+$ kubectl describe pod probe-liveness | sed -n '/^Events:/,$p' | grep -E 'Unhealthy|Killing' | tail -2 | cut -c1-170
+  Warning  Unhealthy  1s (x8 over 37s)   kubelet            spec.containers{nginx}: Liveness probe failed: HTTP probe failed with statuscode: 404
+  Normal   Killing    1s (x4 over 34s)   kubelet            spec.containers{nginx}: Container nginx failed liveness probe, will be restarted
+$ kubectl delete pod probe-liveness --grace-period=1
+pod "probe-liveness" deleted from default namespace
+# 3) Startup probe: an app that needs ~25s to start, with and without a startup probe
+$ kubectl apply -f session-13-storage-hpa-probes/03-probes/slow-start-without-startup-probe.yaml -f session-13-storage-hpa-probes/03-probes/slow-start-with-startup-probe.yaml
+pod/slow-start-no-startup created
+pod/slow-start-with-startup created
+$ kubectl get pods slow-start-no-startup slow-start-with-startup
+NAME                      READY   STATUS    RESTARTS     AGE
+slow-start-no-startup     1/1     Running   1 (9s ago)   45s
+slow-start-with-startup   1/1     Running   0            45s
+$ kubectl describe pod slow-start-no-startup | sed -n '/^Events:/,$p' | grep -E 'Unhealthy|Killing' | tail -2 | cut -c1-150
+  Warning  Unhealthy  3s (x4 over 42s)  kubelet            spec.containers{app}: Liveness probe failed: Get "http://10.244.0.82:80/": dial tcp 10.244.
+  Normal   Killing    3s (x2 over 39s)  kubelet            spec.containers{app}: Container app failed liveness probe, will be restarted
+$ kubectl describe pod slow-start-with-startup | sed -n '/^Events:/,$p' | grep -E 'Unhealthy|Started' | tail -3 | cut -c1-150
+  Normal   Started    45s                 kubelet            spec.containers{app}: Container started
+  Warning  Unhealthy  21s (x12 over 43s)  kubelet            spec.containers{app}: Startup probe failed: Get "http://10.244.0.83:80/": dial tcp 10.244
+# 75 seconds after creation
+$ kubectl get pods slow-start-no-startup slow-start-with-startup
+NAME                      READY   STATUS    RESTARTS     AGE
+slow-start-no-startup     1/1     Running   2 (3s ago)   75s
+slow-start-with-startup   1/1     Running   0            75s
+$ kubectl delete -f session-13-storage-hpa-probes/03-probes/slow-start-without-startup-probe.yaml -f session-13-storage-hpa-probes/03-probes/slow-start-with-startup-probe.yaml --grace-period=1
+pod "slow-start-no-startup" deleted from default namespace
+pod "slow-start-with-startup" deleted from default namespace
+$ kubectl delete pod probe-client --grace-period=1
+pod "probe-client" deleted from default namespace

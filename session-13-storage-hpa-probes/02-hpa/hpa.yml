@@ -1,0 +1,26 @@
+# HorizontalPodAutoscaler for yatri-backend (based on the instructor's hpa-backend.yaml).
+# Keeps average CPU near 50% of the Pods' CPU request, between 2 and 10 replicas.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: yatri-backend-hpa
+  labels:
+    app: yatri-backend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: yatri-backend
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50
+  behavior:
+    scaleDown:
+      # Default is 300s; shortened so the scale-in is visible during the lab.
+      stabilizationWindowSeconds: 60

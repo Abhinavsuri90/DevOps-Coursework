@@ -1,0 +1,11 @@
+# A custom StorageClass using Minikube's hostPath provisioner.
+# WaitForFirstConsumer delays provisioning until a Pod that uses the claim is scheduled.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: lab-wait-for-consumer
+  labels:
+    lab: volumes
+provisioner: k8s.io/minikube-hostpath
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer

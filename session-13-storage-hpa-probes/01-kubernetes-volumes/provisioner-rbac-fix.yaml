@@ -1,0 +1,28 @@
+# Fix for WaitForFirstConsumer on Minikube: the hostPath provisioner must read the Node
+# chosen by the scheduler (annotation volume.kubernetes.io/selected-node), but its
+# ServiceAccount is not allowed to "get nodes". This grants read-only access to Nodes.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: storage-provisioner-node-reader
+  labels:
+    lab: volumes
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: storage-provisioner-node-reader
+  labels:
+    lab: volumes
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: storage-provisioner-node-reader
+subjects:
+  - kind: ServiceAccount
+    name: storage-provisioner
+    namespace: kube-system
