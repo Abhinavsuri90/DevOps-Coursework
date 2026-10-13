@@ -1,0 +1,20 @@
+# Same rules, now claimed by the ingress-nginx controller through class "nginx".
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hello-ingress
+  labels:
+    lab: ingress-controller
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: hello.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hello
+                port:
+                  number: 80

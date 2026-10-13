@@ -1,0 +1,59 @@
+# PostgreSQL reads its admin password from the db-admin Secret.
+# The Secret is created at runtime by create-secrets.sh, so no password is stored in Git.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ledger-db
+  labels:
+    lab: secret-newline
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ledger-db
+  template:
+    metadata:
+      labels:
+        app: ledger-db
+        lab: secret-newline
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: ledger_admin
+            - name: POSTGRES_DB
+              value: ledger
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-admin
+                  key: password
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "ledger_admin", "-d", "ledger"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ledger-db
+  labels:
+    lab: secret-newline
+spec:
+  selector:
+    app: ledger-db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432

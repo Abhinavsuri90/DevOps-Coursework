@@ -1,0 +1,130 @@
+# The Ingress controller is an ordinary Deployment running a reverse proxy (ingress-nginx)
+$ kubectl get deployment,pods -n ingress-nginx
+NAME                                       READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/ingress-nginx-controller   1/1     1            1           176m
+
+NAME                                           READY   STATUS      RESTARTS       AGE
+pod/ingress-nginx-admission-create-8nnqd       0/1     Completed   0              176m
+pod/ingress-nginx-admission-patch-htst6        0/1     Completed   2 (142m ago)   176m
+pod/ingress-nginx-controller-d7cd8c989-755mv   1/1     Running     0              176m
+$ kubectl get service -n ingress-nginx ingress-nginx-controller
+NAME                       TYPE       CLUSTER-IP     EXTERNAL-IP   PORT(S)                      AGE
+ingress-nginx-controller   NodePort   10.96.75.172   <none>        80:31549/TCP,443:30193/TCP   176m
+$ kubectl get ingressclass
+NAME              CONTROLLER             PARAMETERS   AGE
+nginx (default)   k8s.io/ingress-nginx   <none>       176m
+$ kubectl apply -f session-12-ingress-configmaps-secrets/05-ingress-vs-ingress-controller/hello-app.yaml
+deployment.apps/hello created
+service/hello created
+$ kubectl rollout status deployment/hello --timeout=180s
+Waiting for deployment "hello" rollout to finish: 0 of 2 updated replicas are available...
+Waiting for deployment "hello" rollout to finish: 1 of 2 updated replicas are available...
+deployment "hello" successfully rolled out
+# Step 1: a valid Ingress resource, but its class has no controller
+$ kubectl apply -f session-12-ingress-configmaps-secrets/05-ingress-vs-ingress-controller/ingress-no-controller.yaml
+ingress.networking.k8s.io/hello-ingress created
+$ kubectl get ingress hello-ingress
+NAME            CLASS                HOSTS         ADDRESS   PORTS   AGE
+hello-ingress   no-such-controller   hello.local             80      21s
+$ kubectl describe ingress hello-ingress | sed -n '1,20p'
+Name:             hello-ingress
+Labels:           lab=ingress-controller
+Namespace:        default
+Address:          
+Ingress Class:    no-such-controller
+Default backend:  <default>
+Rules:
+  Host         Path  Backends
+  ----         ----  --------
+  hello.local  
+               /   hello:80 (10.244.0.29:5678,10.244.0.28:5678)
+Annotations:   <none>
+Events:        <none>
+# Requests reach the nginx controller (port-forward 18080 -> controller :80), but it ignores this Ingress
+$ curl -s -i -H 'Host: hello.local' http://127.0.0.1:18080/
+HTTP/1.1 404 Not Found
+Date: Tue, 13 Oct 2026 10:09:10 GMT
+Content-Type: text/html
+Content-Length: 146
+Connection: keep-alive
+
+<html>
+<head><title>404 Not Found</title></head>
+<body>
+<center><h1>404 Not Found</h1></center>
+<hr><center>nginx</center>
+</body>
+</html>
+# Step 2: the same rules with ingressClassName nginx, which the ingress-nginx controller watches
+$ kubectl apply -f session-12-ingress-configmaps-secrets/05-ingress-vs-ingress-controller/ingress-nginx.yaml
+ingress.networking.k8s.io/hello-ingress configured
+$ kubectl get ingress hello-ingress
+NAME            CLASS   HOSTS         ADDRESS        PORTS   AGE
+hello-ingress   nginx   hello.local   192.168.49.2   80      88s
+$ kubectl describe ingress hello-ingress | sed -n '1,20p'
+Name:             hello-ingress
+Labels:           lab=ingress-controller
+Namespace:        default
+Address:          192.168.49.2
+Ingress Class:    nginx
+Default backend:  <default>
+Rules:
+  Host         Path  Backends
+  ----         ----  --------
+  hello.local  
+               /   hello:80 (10.244.0.29:5678,10.244.0.28:5678)
+Annotations:   <none>
+Events:
+  Type    Reason  Age               From                      Message
+  ----    ------  ----              ----                      -------
+  Normal  Sync    0s (x2 over 59s)  nginx-ingress-controller  Scheduled for sync
+$ curl -s -i -H 'Host: hello.local' http://127.0.0.1:18080/
+HTTP/1.1 200 OK
+Date: Tue, 13 Oct 2026 10:10:17 GMT
+Content-Type: text/plain; charset=utf-8
+Content-Length: 41
+Connection: keep-alive
+X-App-Name: http-echo
+X-App-Version: 1.0.0
+
+hello from behind the ingress controller
+# The controller translated the Ingress object into its proxy configuration
+$ kubectl logs -n ingress-nginx deploy/ingress-nginx-controller --since=5m | grep -E 'hello-ingress|hello.local' | tail -4
+I1013 10:09:18.809621       7 store.go:489] "creating ingress" ingress="default/hello-ingress" ingressclass="nginx"
+I1013 10:09:18.812625       7 event.go:377] Event(v1.ObjectReference{Kind:"Ingress", Namespace:"default", Name:"hello-ingress", UID:"94456395-4825-42a5-ba50-f6279e396230", APIVersion:"networking.k8s.io/v1", ResourceVersion:"2343", FieldPath:""}): type: 'Normal' reason: 'Sync' Scheduled for sync
+I1013 10:10:17.567470       7 status.go:311] "updating Ingress status" namespace="default" ingress="hello-ingress" currentValue=null newValue=[{"ip":"192.168.49.2"}]
+I1013 10:10:17.574742       7 event.go:377] Event(v1.ObjectReference{Kind:"Ingress", Namespace:"default", Name:"hello-ingress", UID:"94456395-4825-42a5-ba50-f6279e396230", APIVersion:"networking.k8s.io/v1", ResourceVersion:"2406", FieldPath:""}): type: 'Normal' reason: 'Sync' Scheduled for sync
+# Cleanup
+$ kubectl delete -f session-12-ingress-configmaps-secrets/05-ingress-vs-ingress-controller/ingress-nginx.yaml -f session-12-ingress-configmaps-secrets/05-ingress-vs-ingress-controller/hello-app.yaml
+ingress.networking.k8s.io "hello-ingress" deleted from default namespace
+deployment.apps "hello" deleted from default namespace
+service "hello" deleted from default namespace
+# Re-applied to inspect the nginx configuration the controller generated from the Ingress
+$ kubectl apply -f session-12-ingress-configmaps-secrets/05-ingress-vs-ingress-controller/hello-app.yaml -f session-12-ingress-configmaps-secrets/05-ingress-vs-ingress-controller/ingress-nginx.yaml
+deployment.apps/hello unchanged
+service/hello unchanged
+ingress.networking.k8s.io/hello-ingress unchanged
+$ kubectl exec -n ingress-nginx deploy/ingress-nginx-controller -- grep -n -E 'start server hello.local|server_name "hello.local"|ingress_name|service_name|proxy_upstream_name|end server hello.local' /etc/nginx/nginx.conf | grep -v -E 'default-backend|upstream-default' 
+97:	# $ingress_name
+98:	# $service_name
+100:	log_format upstreaminfo '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent" $request_length $request_time [$proxy_upstream_name] [$proxy_alternative_upstream_name] $upstream_addr $upstream_response_length $upstream_response_time $upstream_status $req_id';
+206:		set $proxy_upstream_name "-";
+215:			set $ingress_name   "";
+216:			set $service_name   "";
+238:			set $proxy_host          $proxy_upstream_name;
+335:	## start server hello.local
+337:		server_name "hello.local" ;
+346:		set $proxy_upstream_name "-";
+353:			set $ingress_name   "hello-ingress";
+354:			set $service_name   "hello";
+373:			set $proxy_upstream_name "default-hello-80";
+374:			set $proxy_host          $proxy_upstream_name;
+448:	## end server hello.local
+454:		set $proxy_upstream_name "internal";
+468:		set $proxy_upstream_name "internal";
+512:	lua_add_variable $proxy_upstream_name;
+# Cleanup
+$ kubectl delete -f session-12-ingress-configmaps-secrets/05-ingress-vs-ingress-controller/ingress-nginx.yaml -f session-12-ingress-configmaps-secrets/05-ingress-vs-ingress-controller/hello-app.yaml
+ingress.networking.k8s.io "hello-ingress" deleted from default namespace
+deployment.apps "hello" deleted from default namespace
+service "hello" deleted from default namespace

@@ -1,0 +1,42 @@
+# A client that connects to PostgreSQL every 5 seconds using the ledger-api-db Secret.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ledger-api
+  labels:
+    lab: secret-newline
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ledger-api
+  template:
+    metadata:
+      labels:
+        app: ledger-api
+        lab: secret-newline
+    spec:
+      containers:
+        - name: client
+          image: postgres:16-alpine
+          command: ["sh", "-c"]
+          args:
+            - |
+              while true; do
+                result=$(psql "host=ledger-db user=ledger_admin dbname=ledger connect_timeout=3" \
+                  -tAc "select 'connected to ' || current_database()" 2>&1)
+                echo "$(date +%T) $result"
+                sleep 5
+              done
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ledger-api-db
+                  key: password
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi

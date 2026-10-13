@@ -1,0 +1,23 @@
+# BUG: the Pod asks for key APP_MOD, but the ConfigMap key is APP_MODE.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: storefront
+  labels:
+    lab: configmap-key
+spec:
+  containers:
+    - name: app
+      image: busybox:1.36
+      command: ["sh", "-c", "echo mode=$APP_MODE flags=$FEATURE_FLAGS; sleep 3600"]
+      env:
+        - name: APP_MODE
+          valueFrom:
+            configMapKeyRef:
+              name: storefront-config
+              key: APP_MOD
+        - name: FEATURE_FLAGS
+          valueFrom:
+            configMapKeyRef:
+              name: storefront-config
+              key: FEATURE_FLAGS

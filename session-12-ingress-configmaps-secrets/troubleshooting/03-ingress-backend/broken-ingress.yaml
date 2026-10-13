@@ -1,0 +1,20 @@
+# BUG: the backend points at Service "order-service", but the Service is named "orders".
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: orders-ingress
+  labels:
+    lab: ingress-backend
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: orders.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: order-service
+                port:
+                  number: 80

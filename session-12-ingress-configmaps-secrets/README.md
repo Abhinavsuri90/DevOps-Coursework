@@ -2,6 +2,17 @@
 
 Run from this directory with a Minikube cluster and `kubectl`. The [ConfigMap and Secret](evidence/config-and-secret.txt), [full demo](evidence/full-demo-run.txt), [Ingress and TLS](evidence/ingress-and-tls.txt), [HTTPS virtual hosts](evidence/hybrid-hosts-verified.txt), and [cleanup](evidence/full-demo-cleanup.txt) outputs came from a temporary cluster. [PNG renders of recorded output](screenshots/README.md) are included; direct desktop screenshots were not captured.
 
+## Deliverables
+
+| Task | Where |
+| --- | --- |
+| 1. ConfigMap demo (create, inject, verify, live update) | Sections 1–2, YAML in [01-configmap](01-configmap/) |
+| 2. Secret demo (create, inject, verify, why not in Git) | Sections 3–5, YAML in [02-secret](02-secret/) |
+| 3. Ingress demo (deploy, Service, Ingress, routing, TLS) | Sections 7–14, YAML in [03-ingress](03-ingress/) and [04-full-demo](04-full-demo/) |
+| 4. Ingress vs Ingress Controller | [05-ingress-vs-ingress-controller/README.md](05-ingress-vs-ingress-controller/README.md), with a live with/without-controller demo |
+| 5. Troubleshooting (before/after) | [troubleshooting/README.md](troubleshooting/README.md): Secret newline, ConfigMap key, Ingress backend |
+| Output and screenshots | [evidence/](evidence/), inline below, [screenshots index](screenshots/README.md) |
+
 ## 1–2. ConfigMap and live update
 
 ```bash
@@ -18,6 +29,9 @@ kubectl exec config-demo -- printenv APP_MESSAGE
 ```
 
 Environment variables sourced from a ConfigMap are set when the container starts, so the existing Pod retains the old value. Restarting the Pod picks up the new value. A ConfigMap projected as a volume can update eventually, except for `subPath` mounts. The Pod UID changes on recreation.
+
+![ConfigMap injected into a Pod](screenshots/01-configmap.png)
+![ConfigMap update and Pod restart](screenshots/02-configmap-update.png)
 
 ## 3–4. Secret and base64 newline behavior
 
@@ -37,6 +51,9 @@ printf '%s\n' 'example-bytes' | base64
 
 The two encodings differ because the second includes a trailing newline. An authentication system comparing literal bytes can reject a password with that newline. `stringData` is an alternative input field that Kubernetes encodes into the Secret's base64 `data` field. Base64 is encoding, not encryption. The checked-in Secret manifest has no credential data; the commands create a random demo password at runtime. Use a secret manager or a deployment-time Secret for real credentials.
 
+![Secret injected into a Pod](screenshots/03-secret.png)
+![base64 newline behaviour](screenshots/04-newline.png)
+
 ## 5. Enterprise secret management
 
 A production pipeline should fetch credentials from an approved secrets service or Kubernetes external secrets controller, grant narrowly scoped access through workload identity/RBAC, rotate them, and keep them out of Git and logs. Kubernetes encryption at rest and restricted API access are separate controls; neither follows automatically from base64 encoding.
@@ -52,7 +69,11 @@ kubectl exec deployment/yatri-backend -- printenv APP_MESSAGE
 kubectl exec deployment/yatri-backend -- sh -c 'test -n "$DB_PASSWORD" && echo "secret is present"'
 ```
 
+![ConfigMap and Secret combined injection](screenshots/06-combined-injection.png)
+
 ## 7–8. Ingress resource and controller
+
+The full comparison, with a demo of the same Ingress with and without a controller, is in [05-ingress-vs-ingress-controller/README.md](05-ingress-vs-ingress-controller/README.md).
 
 An Ingress resource declares HTTP host/path routing. An Ingress controller watches those resources and configures the proxy that actually serves traffic. A resource alone does not create an active route.
 
@@ -65,6 +86,8 @@ kubectl describe ingress yatri-ingress
 
 Wait for the controller Pod to become ready before testing routes.
 
+![Ingress controller](screenshots/08-ingress-controller.png)
+
 ## 9. Local hostname resolution
 
 Pointing a hostname at `minikube ip` in `/etc/hosts` is a local machine configuration, not part of a Kubernetes manifest. For a reversible check without editing system files, use curl's `--resolve` option:
@@ -75,6 +98,8 @@ curl --resolve "yatri.local:80:${INGRESS_IP}" http://yatri.local/
 ```
 
 With the Docker driver, host routing to the Minikube IP may require `minikube tunnel` or `minikube service ingress-nginx-controller -n ingress-nginx --url`. Use the address that your driver actually exposes.
+
+![Local hostname routing](screenshots/09-local-routing.png)
 
 ## 10. Path routing
 
@@ -87,6 +112,8 @@ INGRESS_IP=$(minikube ip)
 curl --resolve "yatri.local:80:${INGRESS_IP}" http://yatri.local/
 curl --resolve "yatri.local:80:${INGRESS_IP}" http://yatri.local/api/
 ```
+
+![Path routing](screenshots/10-path-routing.png)
 
 ## 11–12. Virtual hosts and hybrid routing
 
@@ -101,6 +128,9 @@ curl -H 'Host: api.campus.local' "http://${INGRESS_IP}/api/"
 ```
 
 Because this Ingress has TLS, NGINX may redirect HTTP requests to HTTPS. The tested HTTPS routes returned 200 for both hosts using local port forwarding; see the evidence linked above.
+
+![Virtual hosts](screenshots/11-virtual-hosts.png)
+![Hybrid ingress](screenshots/12-hybrid-ingress.png)
 
 ## 13. TLS termination
 
@@ -123,6 +153,8 @@ When the Docker driver's Minikube IP is unreachable from macOS, use `kubectl por
 
 The self-signed certificate needs `-k` only for local testing. A real deployment needs a trusted certificate and safe key management.
 
+![TLS termination](screenshots/13-tls.png)
+
 ## 14. Full demo and cleanup
 
 Both `backend.yaml` and `frontend.yaml` contain two YAML documents separated by `---`: a Deployment and its Service. The automation uses these files, waits for ready Deployments, and shows the resulting objects.
@@ -138,4 +170,10 @@ kubectl delete secret campus-tls-cert --ignore-not-found
 kubectl delete -f 01-configmap/ -f 02-secret/ --ignore-not-found
 ```
 
-The cleanup script removes full-demo resources. The last commands remove the separate exercises. Save real screenshots of each task's command and result once executed.
+The cleanup script removes full-demo resources. The last commands remove the separate exercises.
+
+![Full demo and cleanup](screenshots/14-full-demo.png)
+
+## 15. Troubleshooting
+
+Three before/after investigations (Secret trailing newline against a real PostgreSQL, missing ConfigMap key, Ingress backend pointing at a missing Service) are documented in [troubleshooting/README.md](troubleshooting/README.md).

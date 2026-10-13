@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: storefront-config
+  labels:
+    lab: configmap-key
+data:
+  APP_MODE: production
+  FEATURE_FLAGS: search,cart

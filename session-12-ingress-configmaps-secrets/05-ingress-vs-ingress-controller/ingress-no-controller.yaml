@@ -1,0 +1,20 @@
+# Valid Ingress object, but no controller watches the class "no-such-controller".
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hello-ingress
+  labels:
+    lab: ingress-controller
+spec:
+  ingressClassName: no-such-controller
+  rules:
+    - host: hello.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hello
+                port:
+                  number: 80

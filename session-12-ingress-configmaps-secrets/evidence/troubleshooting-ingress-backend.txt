@@ -1,0 +1,64 @@
+$ kubectl apply -f session-12-ingress-configmaps-secrets/troubleshooting/03-ingress-backend/orders-app.yaml -f session-12-ingress-configmaps-secrets/troubleshooting/03-ingress-backend/broken-ingress.yaml
+deployment.apps/orders created
+service/orders created
+ingress.networking.k8s.io/orders-ingress created
+$ kubectl rollout status deployment/orders --timeout=180s
+Waiting for deployment "orders" rollout to finish: 0 of 2 updated replicas are available...
+Waiting for deployment "orders" rollout to finish: 1 of 2 updated replicas are available...
+deployment "orders" successfully rolled out
+# PROBLEM: the app is running, but requests through the Ingress fail
+$ curl -s -i -H 'Host: orders.local' http://127.0.0.1:18080/
+HTTP/1.1 503 Service Temporarily Unavailable
+Date: Tue, 13 Oct 2026 10:15:18 GMT
+Content-Type: text/html
+Content-Length: 190
+Connection: keep-alive
+
+<html>
+<head><title>503 Service Temporarily Unavailable</title></head>
+<body>
+<center><h1>503 Service Temporarily Unavailable</h1></center>
+<hr><center>nginx</center>
+</body>
+</html>
+# INVESTIGATE: describe shows the backend Service cannot be found
+$ kubectl describe ingress orders-ingress | sed -n '/^Rules:/,/^Annotations:/p'
+Rules:
+  Host          Path  Backends
+  ----          ----  --------
+  orders.local  
+                /   order-service:80 (<error: services "order-service" not found>)
+Annotations:    <none>
+$ kubectl get service -l lab=ingress-backend
+NAME     TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)   AGE
+orders   ClusterIP   10.106.5.239   <none>        80/TCP    2m18s
+$ kubectl logs -n ingress-nginx deploy/ingress-nginx-controller --since=3m | grep -i 'order-service' | tail -2
+W1013 10:15:16.376469       7 controller.go:1135] Error obtaining Endpoints for Service "default/order-service": no object matching key "default/order-service" in local store
+127.0.0.1 - - [13/Oct/2026:10:15:18 +0000] "GET / HTTP/1.1" 503 190 "-" "curl/8.7.1" 75 0.000 [default-order-service-80] [] - - - - 6c15302962a7783fad8dd7f393ed95b8
+# ROOT CAUSE: the Ingress backend names Service order-service, but the Service is called orders
+# FIX: point the backend at the real Service and port
+$ kubectl apply -f session-12-ingress-configmaps-secrets/troubleshooting/03-ingress-backend/fixed-ingress.yaml
+ingress.networking.k8s.io/orders-ingress configured
+$ kubectl describe ingress orders-ingress | sed -n '/^Rules:/,/^Annotations:/p'
+Rules:
+  Host          Path  Backends
+  ----          ----  --------
+  orders.local  
+                /   orders:80 (10.244.0.37:5678,10.244.0.38:5678)
+Annotations:    <none>
+# VERIFY
+$ curl -s -i -H 'Host: orders.local' http://127.0.0.1:18080/
+HTTP/1.1 200 OK
+Date: Tue, 13 Oct 2026 10:15:27 GMT
+Content-Type: text/plain; charset=utf-8
+Content-Length: 18
+Connection: keep-alive
+X-App-Name: http-echo
+X-App-Version: 1.0.0
+
+orders service OK
+# Cleanup
+$ kubectl delete -f session-12-ingress-configmaps-secrets/troubleshooting/03-ingress-backend/fixed-ingress.yaml -f session-12-ingress-configmaps-secrets/troubleshooting/03-ingress-backend/orders-app.yaml
+ingress.networking.k8s.io "orders-ingress" deleted from default namespace
+deployment.apps "orders" deleted from default namespace
+service "orders" deleted from default namespace

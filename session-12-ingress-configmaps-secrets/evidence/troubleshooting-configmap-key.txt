@@ -1,0 +1,38 @@
+$ kubectl apply -f session-12-ingress-configmaps-secrets/troubleshooting/02-configmap-key/configmap.yaml -f session-12-ingress-configmaps-secrets/troubleshooting/02-configmap-key/broken-pod.yaml
+configmap/storefront-config created
+pod/storefront created
+# PROBLEM: the Pod never starts
+$ kubectl get pod storefront
+NAME         READY   STATUS                       RESTARTS   AGE
+storefront   0/1     CreateContainerConfigError   0          10s
+# INVESTIGATE: the events name the exact missing key
+$ kubectl describe pod storefront | sed -n '/^Events:/,$p'
+Events:
+  Type     Reason     Age              From               Message
+  ----     ------     ----             ----               -------
+  Normal   Scheduled  10s              default-scheduler  Successfully assigned default/storefront to minikube
+  Normal   Pulled     9s (x2 over 9s)  kubelet            spec.containers{app}: Container image "busybox:1.36" already present on machine and can be accessed by the pod
+  Warning  Failed     9s (x2 over 9s)  kubelet            spec.containers{app}: Error: couldn't find key APP_MOD in ConfigMap default/storefront-config
+$ kubectl get configmap storefront-config -o jsonpath='{.data}'; echo
+{"APP_MODE":"production","FEATURE_FLAGS":"search,cart"}
+# ROOT CAUSE: the Pod asks for key APP_MOD; the ConfigMap only has APP_MODE and FEATURE_FLAGS
+# FIX: correct the key (env fields of a running Pod are immutable, so the Pod is recreated)
+$ kubectl delete pod storefront
+pod "storefront" deleted from default namespace
+$ kubectl apply -f session-12-ingress-configmaps-secrets/troubleshooting/02-configmap-key/fixed-pod.yaml
+pod/storefront created
+$ kubectl wait --for=condition=Ready pod/storefront --timeout=120s
+pod/storefront condition met
+# VERIFY
+$ kubectl get pod storefront
+NAME         READY   STATUS    RESTARTS   AGE
+storefront   1/1     Running   0          0s
+$ kubectl logs storefront
+mode=production flags=search,cart
+$ kubectl exec storefront -- printenv APP_MODE FEATURE_FLAGS
+production
+search,cart
+# Cleanup
+$ kubectl delete -f session-12-ingress-configmaps-secrets/troubleshooting/02-configmap-key/fixed-pod.yaml -f session-12-ingress-configmaps-secrets/troubleshooting/02-configmap-key/configmap.yaml
+pod "storefront" deleted from default namespace
+configmap "storefront-config" deleted from default namespace
