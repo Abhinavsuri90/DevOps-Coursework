@@ -1,0 +1,114 @@
+# Task 1 - git commit -m vs git commit -a -m (run in a scratch repository named git-practice)
+$ git init -b main
+Initialized empty Git repository in /tmp/scratchpad/git-practice/.git/
+$ echo 'Tracked content v1' > tracked-example.txt
+$ git add tracked-example.txt
+$ git commit -m 'Initialize tracked file'
+[main (root-commit) 75b5dc3] Initialize tracked file
+ 1 file changed, 1 insertion(+)
+ create mode 100644 tracked-example.txt
+$ echo 'Tracked content v2' >> tracked-example.txt
+$ echo 'Untracked content' > untracked-example.txt
+$ git status -s
+ M tracked-example.txt
+?? untracked-example.txt
+# git commit -m only commits what is staged; nothing is staged yet
+$ git commit -m 'Try commit without staging'
+On branch main
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   tracked-example.txt
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	untracked-example.txt
+
+no changes added to commit (use "git add" and/or "git commit -a")
+# git commit -a -m stages modified TRACKED files automatically, but skips untracked files
+$ git commit -a -m 'Demonstrate tracked-file auto staging'
+[main 742ef77] Demonstrate tracked-file auto staging
+ 1 file changed, 1 insertion(+)
+$ git status -s
+?? untracked-example.txt
+$ git show --stat --oneline HEAD
+742ef77 Demonstrate tracked-file auto staging
+ tracked-example.txt | 1 +
+ 1 file changed, 1 insertion(+)
+# New files still need an explicit git add
+$ git add untracked-example.txt
+$ git commit -m 'Commit untracked file'
+[main 5d87269] Commit untracked file
+ 1 file changed, 1 insertion(+)
+ create mode 100644 untracked-example.txt
+$ git status -s
+$ git log --oneline
+5d87269 Commit untracked file
+742ef77 Demonstrate tracked-file auto staging
+75b5dc3 Initialize tracked file
+# Task 2 - cherry-pick. main already has 3 commits; add a 4th
+$ echo 'Project README' > README.md && git add README.md && git commit -q -m 'Add project README' && git log --oneline
+2788ce7 Add project README
+5d87269 Commit untracked file
+742ef77 Demonstrate tracked-file auto staging
+75b5dc3 Initialize tracked file
+# Create a branch and make 3 commits on it
+$ git switch -c feature/cherry-pick-practice
+Switched to a new branch 'feature/cherry-pick-practice'
+$ echo 'Feature notes' > feature.txt && git add feature.txt && git commit -q -m 'Add feature notes'
+$ echo 'Important fix needed on main' > hotfix.txt && git add hotfix.txt && git commit -q -m 'Add important hotfix for main'
+$ echo 'Experimental branch-only work' > extra.txt && git add extra.txt && git commit -q -m 'Add branch-only work'
+# Identify the commit to pick: list commits that are on the branch but not on main
+$ git log --oneline main..feature/cherry-pick-practice
+0072160 Add branch-only work
+eff7e19 Add important hotfix for main
+017068d Add feature notes
+$ git show --stat --oneline eff7e19
+eff7e19 Add important hotfix for main
+ hotfix.txt | 1 +
+ 1 file changed, 1 insertion(+)
+# Back on main, apply only that commit
+$ git switch main
+Switched to branch 'main'
+$ git cherry-pick eff7e19
+[main 4150577] Add important hotfix for main
+ Date: Tue Oct 13 16:11:28 2026 +0530
+ 1 file changed, 1 insertion(+)
+ create mode 100644 hotfix.txt
+# Verify: the change is on main as a NEW commit (new hash); the other branch files are not
+$ git log --oneline --graph --all
+* 0072160 Add branch-only work
+* eff7e19 Add important hotfix for main
+* 017068d Add feature notes
+| * 4150577 Add important hotfix for main
+|/  
+* 2788ce7 Add project README
+* 5d87269 Commit untracked file
+* 742ef77 Demonstrate tracked-file auto staging
+* 75b5dc3 Initialize tracked file
+$ ls
+README.md
+hotfix.txt
+tracked-example.txt
+untracked-example.txt
+$ cat hotfix.txt
+Important fix needed on main
+$ git branch --contains eff7e19
+  feature/cherry-pick-practice
+$ git log --oneline -1 --format='%h %s (cherry-picked onto main)'
+4150577 Add important hotfix for main (cherry-picked onto main)
+$ git log --oneline --graph --all --decorate
+* 0072160 (feature/cherry-pick-practice) Add branch-only work
+* eff7e19 Add important hotfix for main
+* 017068d Add feature notes
+| * 4150577 (HEAD -> main) Add important hotfix for main
+|/  
+* 2788ce7 Add project README
+* 5d87269 Commit untracked file
+* 742ef77 Demonstrate tracked-file auto staging
+* 75b5dc3 Initialize tracked file
+# git cherry marks branch commits already on main with '-' (patch-equivalent) and missing ones with '+'
+$ git cherry -v main feature/cherry-pick-practice
++ 017068d289d46d6b2c1b2426345732f04a91aec9 Add feature notes
+- eff7e19c63220b7cc9f025cb7aa1756ded6c1ef4 Add important hotfix for main
++ 0072160d1bc7c0c1ac370823805cf5454b47626f Add branch-only work
