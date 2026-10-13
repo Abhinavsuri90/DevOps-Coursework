@@ -1,0 +1,20 @@
+# Proof that the gates block bad changes (run in a throwaway folder outside the repo, never committed)
+# Secret scan: a config file containing a randomly generated, fake AWS key pair
+$ docker run --rm -v "$PWD:/src" zricethezav/gitleaks:v8.30.1 dir /src --redact --exit-code 1 2>&1 | grep -E 'Finding|RuleID|File|leaks found' ; echo "gitleaks exit code: ${pipestatus[1]:-${PIPESTATUS[0]}}"
+[90m1:02PM[0m [33mWRN[0m [1mleaks found: 2[0m
+gitleaks exit code: 1
+# SCA: requirements pinned to old, vulnerable versions
+$ pip-audit -r requirements.txt --strict 2>&1 | grep -E '^(Name|----|jinja2|requests)|Found' | head -12; echo "pip-audit exit code: ${pipestatus[1]:-${PIPESTATUS[0]}}"
+Found 49 known vulnerabilities in 4 packages
+Name     Version ID              Fix Versions
+-------- ------- --------------- -------------
+jinja2   2.10    PYSEC-2021-66   2.11.3
+jinja2   2.10    PYSEC-2019-217  2.10.1
+jinja2   2.10    PYSEC-2019-217  2.10.1
+jinja2   2.10    PYSEC-2021-66   2.11.3
+jinja2   2.10    PYSEC-2026-1473 3.1.3
+jinja2   2.10    PYSEC-2026-1474 3.1.4
+jinja2   2.10    PYSEC-2026-1475 3.1.5
+jinja2   2.10    PYSEC-2026-1471 3.1.6
+jinja2   2.10    PYSEC-2026-1473 3.1.3
+pip-audit exit code: 1

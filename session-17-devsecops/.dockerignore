@@ -1,0 +1,13 @@
+tests/
+k8s/
+security/
+workflows/
+evidence/
+screenshots/
+.pytest_cache/
+__pycache__/
+*.pyc
+.coverage
+*.xml
+*.sarif
+*.json

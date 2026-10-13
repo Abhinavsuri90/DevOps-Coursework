@@ -1,0 +1,12 @@
+# Secret scanning rules: Gitleaks' built-in detectors plus a project allowlist.
+title = "Session 17 secret scanning"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Recorded command output and rendered screenshots are not source code"
+paths = [
+  '''evidence/''',
+  '''screenshots/''',
+]

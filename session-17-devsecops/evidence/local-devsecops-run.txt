@@ -1,0 +1,135 @@
+# Local dry run of every pipeline stage before pushing (same tools and versions as the workflow)
+# 1 Build
+$ python -m compileall -q app && python -c "from app.main import app; print('built', app.title, app.version)"
+built Campus Library API dev
+# 2 Unit tests
+$ pytest --cov=app --cov-report=term-missing -q 2>&1 | tail -12
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================================ tests coverage ================================
+_______________ coverage: platform darwin, python 3.13.3-final-0 _______________
+
+Name              Stmts   Miss  Cover   Missing
+-----------------------------------------------
+app/__init__.py       0      0   100%
+app/main.py          48      0   100%
+-----------------------------------------------
+TOTAL                48      0   100%
+========================= 6 passed, 1 warning in 0.31s =========================
+# 3 SAST - Bandit
+$ bandit -c pyproject.toml -r app --severity-level medium 2>&1 | tail -16
+	Total lines of code: 49
+	Total lines skipped (#nosec): 0
+	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
+
+Run metrics:
+	Total issues (by severity):
+		Undefined: 0
+		Low: 0
+		Medium: 0
+		High: 0
+	Total issues (by confidence):
+		Undefined: 0
+		Low: 0
+		Medium: 0
+		High: 0
+Files skipped (0):
+# 4 SCA - pip-audit and Trivy filesystem scan
+$ pip-audit -r requirements.txt --strict 2>&1 | tail -3
+No known vulnerabilities found
+$ docker run --rm -v "$PWD:/src" -w /src aquasec/trivy:0.74.0 fs --config security/trivy.yaml --scanners vuln --format table . 2>&1 | grep -v -E '^\s*$' | tail -12
+2026-10-13T12:58:37Z	WARN	[pip] Unable to find python `site-packages` directory. License detection is skipped.	err="unable to find path to Python executable"
+2026-10-13T12:58:37Z	INFO	Number of language-specific files	num=1
+2026-10-13T12:58:37Z	INFO	[pip] Detecting vulnerabilities...
+Report Summary
+┌──────────────────┬──────┬─────────────────┐
+│      Target      │ Type │ Vulnerabilities │
+├──────────────────┼──────┼─────────────────┤
+│ requirements.txt │ pip  │        0        │
+└──────────────────┴──────┴─────────────────┘
+Legend:
+- '-': Not scanned
+- '0': Clean (no security findings detected)
+# 5 Secret scan - Gitleaks
+$ docker run --rm -v "$PWD:/src" zricethezav/gitleaks:v8.30.1 dir /src --config /src/security/gitleaks.toml --redact --verbose --exit-code 1 2>&1 | tail -4
+    ░    gitleaks
+
+[90m12:58PM[0m [32mINF[0m [1mscanned ~29022 bytes (29.02 KB) in 15.5ms[0m
+[90m12:58PM[0m [32mINF[0m [1mno leaks found[0m
+# 6 Docker build
+$ docker build --build-arg APP_VERSION=local -t campus-library:local . -q
+sha256:98ba671bd1bb9c49f1c97f5d0e2373ec3313692804a39abada21c736166584bd
+$ docker image ls campus-library:local --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}'
+REPOSITORY       TAG       SIZE
+campus-library   local     108MB
+$ docker save campus-library:local | gzip > image.tar.gz && ls -lh image.tar.gz | awk '{print $5, $9}'
+25M image.tar.gz
+# 7 Container image scan - Trivy (fails on fixable HIGH/CRITICAL)
+$ docker run --rm -v "$PWD:/src" -w /src aquasec/trivy:0.74.0 image --config security/trivy.yaml --input image.tar.gz --format table 2>&1 | grep -v -E '^\s*$' | tail -14; echo "trivy exit code: ${pipestatus[1]:-${PIPESTATUS[0]}}"
+│            │                     │          │        │                   │               │ https://github.com/advisories/GHSA-6v7p-g79w-8964          │
+├────────────┼─────────────────────┤          │        ├───────────────────┼───────────────┼────────────────────────────────────────────────────────────┤
+│ setuptools │ CVE-2025-47273      │          │        │ 70.3.0            │ 78.1.1        │ setuptools: Path Traversal Vulnerability in setuptools     │
+│            │                     │          │        │                   │               │ PackageIndex                                               │
+│            │                     │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2025-47273                 │
+├────────────┼─────────────────────┤          │        ├───────────────────┼───────────────┼────────────────────────────────────────────────────────────┤
+│ urllib3    │ CVE-2026-97687      │          │        │ 2.7.0             │ 2.8.0         │ urllib3: urllib3: Traffic interception via HTTPS proxy TLS │
+│            │                     │          │        │                   │               │ configuration override                                     │
+│            │                     │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-97687                 │
+│            ├─────────────────────┤          │        │                   │               ├────────────────────────────────────────────────────────────┤
+│            │ CVE-2026-97689      │          │        │                   │               │ urllib3: urllib3: Denial of Service via unbounded memory   │
+│            │                     │          │        │                   │               │ allocation in chunk parser...                              │
+│            │                     │          │        │                   │               │ https://avd.aquasec.com/nvd/cve-2026-97689                 │
+└────────────┴─────────────────────┴──────────┴────────┴───────────────────┴───────────────┴────────────────────────────────────────────────────────────┘
+trivy exit code: 1
+# Security gate FAILED on the image scan: fixable HIGH CVEs in libraries vendored inside pip itself (urllib3 2.7.0, msgpack 1.1.2, setuptools 70.3.0)
+$ docker run --rm -v "$PWD:/src" -w /src aquasec/trivy:0.74.0 image --config security/trivy.yaml --exit-code 0 --input image.tar.gz --format json 2>/dev/null | python3 -c 'import json,sys; [print(v["PkgName"], v["InstalledVersion"], "->", v.get("FixedVersion"), v["VulnerabilityID"], v["Severity"]) for r in json.load(sys.stdin).get("Results",[]) for v in (r.get("Vulnerabilities") or [])]'
+msgpack 1.1.2 -> 1.2.1 GHSA-6v7p-g79w-8964 HIGH
+setuptools 70.3.0 -> 78.1.1 CVE-2025-47273 HIGH
+urllib3 2.7.0 -> 2.8.0 CVE-2026-97687 HIGH
+urllib3 2.7.0 -> 2.8.0 CVE-2026-97689 HIGH
+# FIX: pip is not needed at runtime, so the Dockerfile now runs 'pip uninstall -y pip' after installing dependencies. Rebuild and rescan:
+$ docker build --build-arg APP_VERSION=local -t campus-library:local . -q
+sha256:098844d31d21e56a73da8dce616e52d4f071c8b50a6c502e7892a78762206f3d
+$ docker save campus-library:local | gzip > image.tar.gz && ls -lh image.tar.gz | awk '{print $5, $9}'
+25M image.tar.gz
+$ docker run --rm -v "$PWD:/src" -w /src aquasec/trivy:0.74.0 image --config security/trivy.yaml --input image.tar.gz --format table 2>&1 | grep -v -E '^\s*$' | tail -9; echo "trivy exit code: ${pipestatus[1]:-${PIPESTATUS[0]}}"
+├──────────────────────────────────────────────────────────────────────────────────┼────────────┼─────────────────┤
+│ usr/local/lib/python3.13/site-packages/typing_inspection-0.4.4.dist-info/METADA- │ python-pkg │        0        │
+│ TA                                                                               │            │                 │
+├──────────────────────────────────────────────────────────────────────────────────┼────────────┼─────────────────┤
+│ usr/local/lib/python3.13/site-packages/uvicorn-0.54.0.dist-info/METADATA         │ python-pkg │        0        │
+└──────────────────────────────────────────────────────────────────────────────────┴────────────┴─────────────────┘
+Legend:
+- '-': Not scanned
+- '0': Clean (no security findings detected)
+trivy exit code: 0
+# 8 Security gate: SAST, SCA, secret scan and image scan all passed
+# 10 Deploy to Kubernetes (local check on Minikube with the image loaded as campus-library:local; the pipeline uses kind + GHCR)
+$ kubectl apply -f k8s/namespace.yaml
+namespace/library created
+$ sed 's|IMAGE_PLACEHOLDER|campus-library:local|' k8s/deployment.yaml | kubectl apply -f -
+deployment.apps/campus-library created
+$ kubectl apply -f k8s/service.yaml
+service/campus-library created
+$ kubectl -n library rollout status deployment/campus-library --timeout=180s
+Waiting for deployment "campus-library" rollout to finish: 0 of 2 updated replicas are available...
+Waiting for deployment "campus-library" rollout to finish: 1 of 2 updated replicas are available...
+deployment "campus-library" successfully rolled out
+$ kubectl -n library get deploy,pods,svc -o wide
+NAME                             READY   UP-TO-DATE   AVAILABLE   AGE   CONTAINERS   IMAGES                 SELECTOR
+deployment.apps/campus-library   2/2     2            2           7s    api          campus-library:local   app=campus-library
+
+NAME                                  READY   STATUS    RESTARTS   AGE   IP             NODE       NOMINATED NODE   READINESS GATES
+pod/campus-library-56f566b4f8-pbkvt   1/1     Running   0          7s    10.244.0.199   minikube   <none>           <none>
+pod/campus-library-56f566b4f8-wp8wp   1/1     Running   0          7s    10.244.0.198   minikube   <none>           <none>
+
+NAME                     TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)   AGE   SELECTOR
+service/campus-library   ClusterIP   10.102.74.203   <none>        80/TCP    7s    app=campus-library
+$ kubectl -n library exec deploy/campus-library -- sh -c 'id; touch /srv/x 2>&1; python -c "import urllib.request as u; print(u.urlopen(\"http://localhost:8000/books\").read().decode())"'
+uid=10001(appuser) gid=10001(appuser) groups=10001(appuser)
+touch: /srv/x: Read-only file system
+[{"title":"Clean Code","author":"Robert C. Martin","id":1,"available":true},{"title":"The Phoenix Project","author":"Gene Kim","id":2,"available":true}]
+$ kubectl -n library get pod -l app=campus-library -o jsonpath='{.items[0].spec.containers[0].securityContext}'; echo
+{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":true}
+$ kubectl delete namespace library
+namespace "library" deleted

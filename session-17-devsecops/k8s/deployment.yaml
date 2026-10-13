@@ -1,0 +1,53 @@
+# IMAGE_PLACEHOLDER is replaced by the pipeline with ghcr.io/<owner>/campus-library:<git sha>.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: campus-library
+  namespace: library
+  labels:
+    app: campus-library
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: campus-library
+  template:
+    metadata:
+      labels:
+        app: campus-library
+    spec:
+      imagePullSecrets:
+        - name: ghcr-pull
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: IMAGE_PLACEHOLDER
+          ports:
+            - name: http
+              containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

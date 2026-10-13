@@ -1,0 +1,131 @@
+# Session 16 - Continuous Integration for the GPA Calculator API.
+# A copy lives in session-16-github-actions/workflows/ (the lint job checks they match).
+name: "Session 16 · CI"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "session-16-github-actions/**"
+      - ".github/workflows/session16-*.yml"
+  pull_request:
+    paths:
+      - "session-16-github-actions/**"
+      - ".github/workflows/session16-*.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: session16-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: session-16-github-actions
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: session-16-github-actions/requirements-dev.txt
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Ruff
+        run: ruff check .
+      - name: Workflow copies match the active workflows
+        run: |
+          diff -u ../.github/workflows/session16-ci.yml workflows/session16-ci.yml
+          diff -u ../.github/workflows/session16-cd.yml workflows/session16-cd.yml
+
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    needs: lint
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: session-16-github-actions/requirements-dev.txt
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Run tests with coverage
+        run: pytest --cov=app --cov-report=term-missing --cov-report=xml --junitxml=test-results.xml
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-report-py${{ matrix.python-version }}
+          path: |
+            session-16-github-actions/test-results.xml
+            session-16-github-actions/coverage.xml
+
+  build:
+    name: Build package
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build
+        run: ./build.sh
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: gpa-calculator-build
+          path: session-16-github-actions/dist/
+
+  docker:
+    name: Docker build and smoke test
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build image
+        run: docker build --build-arg APP_VERSION=${{ github.sha }} -t gpa-calculator:${{ github.sha }} .
+      - name: Run container
+        run: docker run -d --name gpa -p 8000:8000 gpa-calculator:${{ github.sha }}
+      - name: Smoke test
+        run: |
+          for _ in $(seq 1 20); do curl -fs http://localhost:8000/health && break; sleep 1; done
+          echo
+          curl -fs -X POST http://localhost:8000/api/gpa \
+            -H 'Content-Type: application/json' \
+            -d '{"courses":[{"credits":4,"grade":"A"},{"credits":3,"grade":"B+"}]}'
+          echo
+      - name: Container logs
+        if: always()
+        run: docker logs gpa
+
+  secrets-demo:
+    name: Secrets demo
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Use the built-in GITHUB_TOKEN secret
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Calling the GitHub API with a token that is masked in logs: $GH_TOKEN"
+          gh api "repos/${{ github.repository }}" --jq '"repo: \(.full_name), default branch: \(.default_branch)"'
+      - name: Optional repository secret
+        env:
+          DEMO_API_KEY: ${{ secrets.DEMO_API_KEY }}
+        run: |
+          if [ -z "$DEMO_API_KEY" ]; then
+            echo "DEMO_API_KEY is not set (Settings > Secrets and variables > Actions > New repository secret)."
+          else
+            echo "DEMO_API_KEY is set (${#DEMO_API_KEY} characters); its value is never printed."
+          fi

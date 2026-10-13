@@ -1,0 +1,103 @@
+# Local dry run of the CI steps before pushing (Python 3.13.3, same commands as the workflow)
+$ actionlint ../.github/workflows/session16-ci.yml ../.github/workflows/session16-cd.yml
+$ ruff check .
+All checks passed!
+$ pytest --cov=app --cov-report=term-missing --junitxml=test-results.xml
+============================= test session starts ==============================
+platform darwin -- Python 3.13.3, pytest-9.1.1, pluggy-1.6.0 -- /tmp/scratchpad/venv16/bin/python3.13
+cachedir: .pytest_cache
+rootdir: /Users/abhinavsuri/Desktop/DevOps-Coursework/session-16-github-actions
+configfile: pyproject.toml
+testpaths: tests
+plugins: cov-7.1.0
+collecting ... collected 0 items / 2 errors
+
+==================================== ERRORS ====================================
+______________________ ERROR collecting tests/test_api.py ______________________
+ImportError while importing test module '/Users/abhinavsuri/Desktop/DevOps-Coursework/session-16-github-actions/tests/test_api.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_api.py:3: in <module>
+    from app import create_app
+E   ModuleNotFoundError: No module named 'app'
+______________________ ERROR collecting tests/test_gpa.py ______________________
+ImportError while importing test module '/Users/abhinavsuri/Desktop/DevOps-Coursework/session-16-github-actions/tests/test_gpa.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_gpa.py:3: in <module>
+    from app.gpa import calculate_gpa, grade_points
+E   ModuleNotFoundError: No module named 'app'
+- generated xml file: /Users/abhinavsuri/Desktop/DevOps-Coursework/session-16-github-actions/test-results.xml -
+=========================== short test summary info ============================
+ERROR tests/test_api.py
+ERROR tests/test_gpa.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 2 errors during collection !!!!!!!!!!!!!!!!!!!!
+============================== 2 errors in 0.10s ===============================
+$ ./build.sh
+total 16
+-rw-r--r--@ 1 abhinavsuri  staff   144 Oct 13 18:24 build-info.txt
+-rw-r--r--@ 1 abhinavsuri  staff  1914 Oct 13 18:24 gpa-calculator-f57fcd3.tar.gz
+app=gpa-calculator
+version=f57fcd3
+built_at=2026-10-13T12:54:29Z
+python=Python 3.13.3
+commit=f57fcd30a39c4ffd69bdebb099e3711e7b317c98
+run=local
+$ docker build --build-arg APP_VERSION=local -t gpa-calculator:local . -q
+sha256:d7691bccb7e559df9f6f5306049feb24587ee5c7244912510cc77e1fac129bf2
+$ docker run -d --name gpa-local -p 8000:8000 gpa-calculator:local
+a695ec1a92e1349d22580192873a198d225e6f127d6dc933df55da0b9ada7659
+$ curl -s http://localhost:8000/health
+{"status":"ok","version":"local"}
+$ curl -s -X POST http://localhost:8000/api/gpa -H 'Content-Type: application/json' -d '{"courses":[{"credits":4,"grade":"A"},{"credits":3,"grade":"B+"}]}'
+{"gpa":3.7,"total_credits":7.0}
+$ curl -s -X POST http://localhost:8000/api/gpa -H 'Content-Type: application/json' -d '{"courses":[{"credits":4,"grade":"E"}]}'
+{"error":"unknown grade 'E'; use one of A, A-, B+, B, B-, C+, C, D, F"}
+$ docker exec gpa-local id
+uid=10001(appuser) gid=10001(appuser) groups=10001(appuser)
+$ docker inspect gpa-local --format 'Health={{.State.Health.Status}}'
+Health=starting
+$ docker rm -f gpa-local
+gpa-local
+# Fix found by the dry run: pytest did not put the project root on sys.path. Added pythonpath = ["."] to [tool.pytest.ini_options] in pyproject.toml
+$ pytest --cov=app --cov-report=term-missing --junitxml=test-results.xml
+============================= test session starts ==============================
+platform darwin -- Python 3.13.3, pytest-9.1.1, pluggy-1.6.0 -- /tmp/scratchpad/venv16/bin/python3.13
+cachedir: .pytest_cache
+rootdir: /Users/abhinavsuri/Desktop/DevOps-Coursework/session-16-github-actions
+configfile: pyproject.toml
+testpaths: tests
+plugins: cov-7.1.0
+collecting ... collected 13 items
+
+tests/test_api.py::test_health PASSED                                    [  7%]
+tests/test_api.py::test_grade_scale PASSED                               [ 15%]
+tests/test_api.py::test_gpa_endpoint PASSED                              [ 23%]
+tests/test_api.py::test_gpa_endpoint_validation PASSED                   [ 30%]
+tests/test_gpa.py::test_grade_points_is_case_insensitive PASSED          [ 38%]
+tests/test_gpa.py::test_weighted_gpa PASSED                              [ 46%]
+tests/test_gpa.py::test_unknown_grade_is_rejected PASSED                 [ 53%]
+tests/test_gpa.py::test_invalid_credits_are_rejected[0] PASSED           [ 61%]
+tests/test_gpa.py::test_invalid_credits_are_rejected[-1] PASSED          [ 69%]
+tests/test_gpa.py::test_invalid_credits_are_rejected[11] PASSED          [ 76%]
+tests/test_gpa.py::test_invalid_credits_are_rejected[3] PASSED           [ 84%]
+tests/test_gpa.py::test_invalid_credits_are_rejected[True] PASSED        [ 92%]
+tests/test_gpa.py::test_empty_course_list_is_rejected PASSED             [100%]
+
+- generated xml file: /Users/abhinavsuri/Desktop/DevOps-Coursework/session-16-github-actions/test-results.xml -
+================================ tests coverage ================================
+_______________ coverage: platform darwin, python 3.13.3-final-0 _______________
+
+Name              Stmts   Miss  Cover   Missing
+-----------------------------------------------
+app/__init__.py      21      0   100%
+app/gpa.py           18      0   100%
+-----------------------------------------------
+TOTAL                39      0   100%
+============================== 13 passed in 0.42s ==============================

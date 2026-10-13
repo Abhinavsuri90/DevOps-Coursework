@@ -1,0 +1,12 @@
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.pyc
+.coverage
+coverage.xml
+test-results.xml
+dist/
+evidence/
+screenshots/
+workflows/
+tests/
