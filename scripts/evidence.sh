@@ -17,7 +17,12 @@ run() {
   printf '$ %s\n' "$*" >> "$EVIDENCE"
   printf '$ %s\n' "$*"
   { eval "$*"; } 2>&1 | tee -a "$EVIDENCE"
-  return "${PIPESTATUS[0]}"
+  local rc="${PIPESTATUS[0]:-${pipestatus[1]}}"
+  # Keep the next "$ command" on its own line when output lacks a final newline.
+  if [ -s "$EVIDENCE" ] && [ -n "$(tail -c 1 "$EVIDENCE")" ]; then
+    echo | tee -a "$EVIDENCE"
+  fi
+  return "$rc"
 }
 
 note() {
