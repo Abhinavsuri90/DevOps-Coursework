@@ -1,0 +1,23 @@
+# Session 18 terraform-s3-demo: steps that run without AWS credentials (Terraform v1.16.5)
+$ terraform init -input=false -no-color 2>&1 | grep -E 'Initializing|Installing|Installed|Reusing|successfully' 
+Initializing the backend...
+Initializing provider plugins...
+- Reusing previous version of hashicorp/aws from the dependency lock file
+Terraform has been successfully initialized!
+$ terraform fmt -check -diff && echo 'fmt: all files already formatted'
+fmt: all files already formatted
+$ terraform validate -no-color
+Success! The configuration is valid.
+
+$ terraform providers -no-color
+
+Providers required by configuration:
+.
+└── provider[registry.terraform.io/hashicorp/aws] ~> 6.68
+
+# Dependency graph (implicit dependencies come from references such as aws_s3_bucket.demo.id)
+$ terraform graph | grep -- '->' | sed -E 's/^ *"([^"]+)" -> "([^"]+)";$/\1  depends on  \2/' | sort
+aws_s3_bucket_public_access_block.demo  depends on  aws_s3_bucket.demo
+aws_s3_bucket_server_side_encryption_configuration.demo  depends on  aws_s3_bucket.demo
+aws_s3_bucket_versioning.demo  depends on  aws_s3_bucket.demo
+aws_s3_object.hello  depends on  aws_s3_bucket.demo
