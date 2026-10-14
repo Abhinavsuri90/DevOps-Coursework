@@ -113,6 +113,10 @@ jobs:
     name: Secrets demo
     needs: lint
     runs-on: ubuntu-latest
+    # No checkout in this job, so the workflow-level working directory does not exist here.
+    defaults:
+      run:
+        working-directory: .
     steps:
       - name: Use the built-in GITHUB_TOKEN secret
         env:
