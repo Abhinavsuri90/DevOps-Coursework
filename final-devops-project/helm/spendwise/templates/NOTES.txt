@@ -1,0 +1,7 @@
+SpendWise {{ .Chart.AppVersion }} is deployed as release "{{ .Release.Name }}" in namespace {{ .Release.Namespace }}.
+  backend:  {{ include "spendwise.image" (dict "image" .Values.backend.image "component" "backend") }}
+  frontend: {{ include "spendwise.image" (dict "image" .Values.frontend.image "component" "frontend") }}
+{{- if .Values.ingress.enabled }}
+Open: http://{{ first .Values.ingress.hosts }}/   (API under /api)
+{{- end }}
+Check: kubectl get pods,svc,ingress,hpa -n {{ .Release.Namespace }}

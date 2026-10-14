@@ -1,0 +1,34 @@
+# Argo CD Application for SpendWise. Applied once from the admin side:
+#   kubectl apply -f gitops/argocd-application.yaml
+# Argo CD then renders helm/spendwise with values-gitops.yaml from the main branch and keeps the
+# spendwise namespace equal to Git. The CI pipeline only commits new image tags to that values file.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: spendwise
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Abhinavsuri90/DevOps-Coursework.git
+    targetRevision: main
+    path: final-devops-project/helm/spendwise
+    helm:
+      releaseName: spendwise
+      valueFiles:
+        - values-gitops.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: spendwise
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,20 @@
+# Build context is final-devops-project/; only application/ and docker/ are needed.
+**/node_modules
+**/dist
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/.venv
+**/.coverage
+**/*.db
+terraform
+helm
+kubernetes
+gitops
+monitoring
+security
+troubleshooting
+evidence
+screenshots
+.github
+docker/.env

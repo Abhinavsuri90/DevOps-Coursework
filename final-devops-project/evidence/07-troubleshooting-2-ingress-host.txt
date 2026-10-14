@@ -1,0 +1,44 @@
+# INJECT fault 2: helm upgrade with troubleshooting/break-2-ingress-host.yaml
+$ helm upgrade spendwise helm/spendwise -n spendwise -f helm/spendwise/values-local.yaml -f troubleshooting/break-2-ingress-host.yaml --wait --timeout 5m | head -6
+Release "spendwise" has been upgraded. Happy Helming!
+NAME: spendwise
+LAST DEPLOYED: Tue Oct 13 19:08:18 2026
+NAMESPACE: spendwise
+STATUS: deployed
+REVISION: 9
+# IDENTIFY: users of http://spendwise.local get 404 for every page and API call
+$ curl -s -o /dev/null -w 'GET / -> HTTP %{http_code}\n' -H 'Host: spendwise.local' http://127.0.0.1:18080/
+GET / -> HTTP 404
+$ curl -s -o /dev/null -w 'GET /api/summary -> HTTP %{http_code}\n' -H 'Host: spendwise.local' http://127.0.0.1:18080/api/summary
+GET /api/summary -> HTTP 404
+# INVESTIGATE: Pods and Services are healthy, so look at the Ingress rules and the controller
+$ kubectl get pods,svc -n spendwise -l app.kubernetes.io/name=backend
+NAME                                     READY   STATUS    RESTARTS   AGE
+pod/spendwise-backend-75d9486d96-gppqg   1/1     Running   0          15m
+pod/spendwise-backend-75d9486d96-vgg2b   1/1     Running   0          15m
+
+NAME                        TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)    AGE
+service/spendwise-backend   ClusterIP   10.109.57.48   <none>        8000/TCP   25m
+$ kubectl get ingress spendwise -n spendwise
+NAME        CLASS   HOSTS            ADDRESS        PORTS   AGE
+spendwise   nginx   spendwise.locl   192.168.49.2   80      25m
+$ kubectl -n ingress-nginx logs deploy/ingress-nginx-controller --since=1m | grep -E 'spendwise|404' | tail -2 | cut -c1-200
+I1013 13:38:19.215648       7 main.go:107] "successfully validated configuration, accepting" ingress="spendwise/spendwise"
+I1013 13:38:19.220206       7 event.go:377] Event(v1.ObjectReference{Kind:"Ingress", Namespace:"spendwise", Name:"spendwise", UID:"67b7bb4a-b708-4a63-bb9a-7974502bc8e1", APIVersion:"networking.k8s.io/
+# ROOT CAUSE: the Ingress host is spendwise.locl (typo); requests for spendwise.local match no rule, so the controller's default backend answers 404
+# FIX: deploy the correct host
+$ helm upgrade spendwise helm/spendwise -n spendwise -f helm/spendwise/values-local.yaml --wait --timeout 5m | head -6
+Release "spendwise" has been upgraded. Happy Helming!
+NAME: spendwise
+LAST DEPLOYED: Tue Oct 13 19:08:30 2026
+NAMESPACE: spendwise
+STATUS: deployed
+REVISION: 10
+# VERIFY
+$ kubectl get ingress spendwise -n spendwise
+NAME        CLASS   HOSTS             ADDRESS        PORTS   AGE
+spendwise   nginx   spendwise.local   192.168.49.2   80      25m
+$ curl -s -o /dev/null -w 'GET / -> HTTP %{http_code}\n' -H 'Host: spendwise.local' http://127.0.0.1:18080/
+GET / -> HTTP 200
+$ curl -s -H 'Host: spendwise.local' http://127.0.0.1:18080/api/summary | cut -c1-60
+{"total":"13641.00","count":164,"by_category":[{"category":"

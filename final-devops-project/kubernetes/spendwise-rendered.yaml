@@ -1,0 +1,1006 @@
+---
+# Source: spendwise/templates/pdb.yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: spendwise-backend
+  labels:
+    app.kubernetes.io/part-of: spendwise
+    app.kubernetes.io/instance: spendwise
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: spendwise-1.0.0
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: spendwise
+      app.kubernetes.io/name: backend
+
+---
+# Source: spendwise/templates/pdb.yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: spendwise-frontend
+  labels:
+    app.kubernetes.io/part-of: spendwise
+    app.kubernetes.io/instance: spendwise
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: spendwise-1.0.0
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: spendwise
+      app.kubernetes.io/name: frontend
+
+---
+# Source: spendwise/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spendwise-config
+  labels:
+    app.kubernetes.io/part-of: spendwise
+    app.kubernetes.io/instance: spendwise
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: spendwise-1.0.0
+data:
+  DB_HOST: spendwise-postgres
+  DB_PORT: "5432"
+  DB_NAME: "spendwise"
+  DB_USER: "spendwise"
+  BACKEND_HOST: spendwise-backend
+  BACKEND_PORT: "8000"
+
+---
+# Source: spendwise/templates/grafana-dashboard.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spendwise-grafana-dashboard
+  labels:
+    app.kubernetes.io/part-of: spendwise
+    app.kubernetes.io/instance: spendwise
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: spendwise-1.0.0
+    grafana_dashboard: "1"
+data:
+  spendwise.json: |
+    {
+      "uid": "spendwise",
+      "title": "SpendWise - Application Overview",
+      "tags": [
+        "final-project"
+      ],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "refresh": "10s",
+      "time": {
+        "from": "now-30m",
+        "to": "now"
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "stat",
+          "title": "Requests / s",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 4,
+            "h": 4
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "decimals": 2
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(rate(spendwise_http_requests_total[2m]))",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Error rate (5xx)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 4,
+            "y": 0,
+            "w": 4,
+            "h": 4
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "decimals": 2
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "(sum(rate(spendwise_http_requests_total{status=~\"5..\"}[5m])) or vector(0)) / sum(rate(spendwise_http_requests_total[5m]))",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "p95 latency",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 8,
+            "y": 0,
+            "w": 4,
+            "h": 4
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "decimals": 2
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(spendwise_http_request_duration_seconds_bucket[5m])))",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "stat",
+          "title": "Expenses created",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 0,
+            "w": 4,
+            "h": 4
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "decimals": 0
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(spendwise_expenses_created_total)",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "stat",
+          "title": "Backend Pods up",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 16,
+            "y": 0,
+            "w": 4,
+            "h": 4
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "decimals": 0
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(up{namespace=\"spendwise\", job=~\".*backend\"})",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "stat",
+          "title": "Backend replicas (HPA)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 20,
+            "y": 0,
+            "w": 4,
+            "h": 4
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "decimals": 0
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "kube_horizontalpodautoscaler_status_current_replicas{namespace=\"spendwise\"}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "type": "timeseries",
+          "title": "Requests per second by route",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 4,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps"
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (route) (rate(spendwise_http_requests_total[2m]))",
+              "legendFormat": "{{route}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "Latency p50 / p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 4,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s"
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.50, sum by (le) (rate(spendwise_http_request_duration_seconds_bucket[5m])))",
+              "legendFormat": "p50",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "B",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(spendwise_http_request_duration_seconds_bucket[5m])))",
+              "legendFormat": "p95",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "type": "timeseries",
+          "title": "Expenses created by category (5m)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 12,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none"
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (category) (increase(spendwise_expenses_created_total[5m]))",
+              "legendFormat": "{{category}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 10,
+          "type": "timeseries",
+          "title": "Backend CPU per Pod (cores)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 12,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none"
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"spendwise\", container=\"api\"}[2m]))",
+              "legendFormat": "{{pod}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 11,
+          "type": "timeseries",
+          "title": "Backend memory per Pod",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 20,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"spendwise\", container=\"api\"})",
+              "legendFormat": "{{pod}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 12,
+          "type": "timeseries",
+          "title": "HTTP status codes",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 20,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps"
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (status) (rate(spendwise_http_requests_total[2m]))",
+              "legendFormat": "{{status}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        }
+      ]
+    }
+    
+
+---
+# Source: spendwise/templates/backend.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: spendwise-backend
+  labels:
+    app.kubernetes.io/part-of: spendwise
+    app.kubernetes.io/instance: spendwise
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: spendwise-1.0.0
+    app.kubernetes.io/name: backend
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/instance: spendwise
+    app.kubernetes.io/name: backend
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+
+---
+# Source: spendwise/templates/frontend.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: spendwise-frontend
+  labels:
+    app.kubernetes.io/part-of: spendwise
+    app.kubernetes.io/instance: spendwise
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: spendwise-1.0.0
+    app.kubernetes.io/name: frontend
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/instance: spendwise
+    app.kubernetes.io/name: frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+
+---
+# Source: spendwise/templates/postgres.yaml
+# PostgreSQL with persistent storage (one PVC created from volumeClaimTemplates).
+apiVersion: v1
+kind: Service
+metadata:
+  name: spendwise-postgres
+  labels:
+    app.kubernetes.io/part-of: spendwise
+    app.kubernetes.io/instance: spendwise
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: spendwise-1.0.0
+    app.kubernetes.io/name: postgres
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/instance: spendwise
+    app.kubernetes.io/name: postgres
+  ports:
+    - name: postgres
+      port: 5432
+
+---
+# Source: spendwise/templates/backend.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spendwise-backend
+  labels:
+    app.kubernetes.io/part-of: spendwise
+    app.kubernetes.io/instance: spendwise
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: spendwise-1.0.0
+    app.kubernetes.io/name: backend
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: spendwise
+      app.kubernetes.io/name: backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: spendwise
+        app.kubernetes.io/instance: spendwise
+        app.kubernetes.io/managed-by: Helm
+        helm.sh/chart: spendwise-1.0.0
+        app.kubernetes.io/name: backend
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # Wait for PostgreSQL so the first migration doesn't fail and restart the Pod.
+        - name: wait-for-db
+          image: postgres:17-alpine
+          command: ["sh", "-c", "until pg_isready -h \"$DB_HOST\" -p \"$DB_PORT\" -U \"$DB_USER\" -d \"$DB_NAME\"; do echo waiting for database; sleep 2; done"]
+          envFrom:
+            - configMapRef:
+                name: spendwise-config
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      containers:
+        - name: api
+          image: spendwise-backend:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: spendwise-config
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: spendwise-db
+                  key: password
+            # $(VAR) references are expanded by Kubernetes from the variables above.
+            - name: DATABASE_URL
+              value: postgresql+psycopg://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)
+            - name: APP_VERSION
+              value: "local"
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 3
+            failureThreshold: 40
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 15
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: 500m
+              memory: 256Mi
+            requests:
+              cpu: 50m
+              memory: 96Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+
+---
+# Source: spendwise/templates/frontend.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spendwise-frontend
+  labels:
+    app.kubernetes.io/part-of: spendwise
+    app.kubernetes.io/instance: spendwise
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: spendwise-1.0.0
+    app.kubernetes.io/name: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: spendwise
+      app.kubernetes.io/name: frontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: spendwise
+        app.kubernetes.io/instance: spendwise
+        app.kubernetes.io/managed-by: Helm
+        helm.sh/chart: spendwise-1.0.0
+        app.kubernetes.io/name: frontend
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          image: spendwise-frontend:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: BACKEND_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: spendwise-config
+                  key: BACKEND_HOST
+            - name: BACKEND_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: spendwise-config
+                  key: BACKEND_PORT
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 15
+          resources:
+            limits:
+              memory: 64Mi
+            requests:
+              cpu: 10m
+              memory: 16Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            # nginx renders its config from the template at start-up and needs scratch space.
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: nginx-conf
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+
+---
+# Source: spendwise/templates/hpa.yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: spendwise-backend
+  labels:
+    app.kubernetes.io/part-of: spendwise
+    app.kubernetes.io/instance: spendwise
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: spendwise-1.0.0
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: spendwise-backend
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+---
+# Source: spendwise/templates/postgres.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: spendwise-postgres
+  labels:
+    app.kubernetes.io/part-of: spendwise
+    app.kubernetes.io/instance: spendwise
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: spendwise-1.0.0
+    app.kubernetes.io/name: postgres
+spec:
+  serviceName: spendwise-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: spendwise
+      app.kubernetes.io/name: postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: spendwise
+        app.kubernetes.io/instance: spendwise
+        app.kubernetes.io/managed-by: Helm
+        helm.sh/chart: spendwise-1.0.0
+        app.kubernetes.io/name: postgres
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70        # "postgres" user in the Alpine image
+        fsGroup: 70
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: spendwise-config
+                  key: DB_NAME
+            - name: POSTGRES_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: spendwise-config
+                  key: DB_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: spendwise-db
+                  key: password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            limits:
+              memory: 512Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
+
+---
+# Source: spendwise/templates/ingress.yaml
+# One entry point: /api goes to the FastAPI backend, everything else to the React frontend.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: spendwise
+  labels:
+    app.kubernetes.io/part-of: spendwise
+    app.kubernetes.io/instance: spendwise
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: spendwise-1.0.0
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: "spendwise.local"
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: spendwise-backend
+                port:
+                  name: http
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: spendwise-frontend
+                port:
+                  name: http
+
+---
+# Source: spendwise/templates/prometheusrule.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: spendwise-alerts
+  labels:
+    app.kubernetes.io/part-of: spendwise
+    app.kubernetes.io/instance: spendwise
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: spendwise-1.0.0
+spec:
+  groups:
+    - name: spendwise
+      rules:
+        - alert: SpendWiseHighErrorRate
+          expr: |
+            sum(rate(spendwise_http_requests_total{namespace="spendwise",status=~"5.."}[5m]))
+              / sum(rate(spendwise_http_requests_total{namespace="spendwise"}[5m])) > 0.05
+          for: 2m
+          labels:
+            severity: warning
+            app: spendwise
+          annotations:
+            summary: More than 5% of SpendWise API requests are failing
+        - alert: SpendWiseBackendDown
+          expr: sum(up{namespace="spendwise",job="spendwise-backend"}) == 0
+          for: 1m
+          labels:
+            severity: critical
+            app: spendwise
+          annotations:
+            summary: No SpendWise backend Pod can be scraped
+        - alert: SpendWiseSlowRequests
+          expr: |
+            histogram_quantile(0.95, sum by (le) (rate(spendwise_http_request_duration_seconds_bucket{namespace="spendwise"}[5m]))) > 0.5
+          for: 5m
+          labels:
+            severity: warning
+            app: spendwise
+          annotations:
+            summary: SpendWise p95 latency is above 500 ms
+
+---
+# Source: spendwise/templates/servicemonitor.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: spendwise-backend
+  labels:
+    app.kubernetes.io/part-of: spendwise
+    app.kubernetes.io/instance: spendwise
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: spendwise-1.0.0
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: spendwise
+      app.kubernetes.io/name: backend
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+---
+# Source: spendwise/templates/tests/test-connection.yaml
+# `helm test <release>` runs this Pod: it calls the backend health endpoint and the frontend.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: spendwise-test
+  labels:
+    app.kubernetes.io/part-of: spendwise
+    app.kubernetes.io/instance: spendwise
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: spendwise-1.0.0
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  containers:
+    - name: test
+      image: busybox:1.36
+      command:
+        - sh
+        - -c
+        - |
+          wget -qO- http://spendwise-backend:8000/health &&
+          wget -qO- http://spendwise-frontend/healthz
+

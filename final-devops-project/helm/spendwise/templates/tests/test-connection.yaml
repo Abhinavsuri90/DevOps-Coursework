@@ -1,0 +1,21 @@
+# `helm test <release>` runs this Pod: it calls the backend health endpoint and the frontend.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ .Release.Name }}-test
+  labels:
+    {{- include "spendwise.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  containers:
+    - name: test
+      image: busybox:1.36
+      command:
+        - sh
+        - -c
+        - |
+          wget -qO- http://{{ include "spendwise.backend.name" . }}:8000/health &&
+          wget -qO- http://{{ include "spendwise.frontend.name" . }}/healthz

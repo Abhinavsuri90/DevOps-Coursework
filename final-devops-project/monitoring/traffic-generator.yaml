@@ -1,0 +1,43 @@
+# Synthetic users for the dashboards: read the summary/list every 2 s and add an expense about once a minute.
+# (It ran at 0.5 s / every 10 loops at first; that steady load kept the backend HPA at maxReplicas.)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spendwise-traffic
+  namespace: spendwise
+  labels:
+    app.kubernetes.io/part-of: spendwise
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spendwise-traffic
+  template:
+    metadata:
+      labels:
+        app: spendwise-traffic
+    spec:
+      containers:
+        - name: users
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              API=http://spendwise-backend:8000/api
+              i=0
+              while true; do
+                wget -q -O /dev/null "$API/summary"
+                wget -q -O /dev/null "$API/expenses"
+                wget -q -O /dev/null "$API/expenses?category=food"
+                i=$((i + 1))
+                if [ $((i % 30)) -eq 0 ]; then
+                  wget -q -O /dev/null --header 'Content-Type: application/json' \
+                    --post-data "{\"title\":\"Chai #$i\",\"amount\":\"15.00\",\"category\":\"food\",\"spent_on\":\"$(date +%F)\"}" "$API/expenses"
+                fi
+                sleep 2
+              done
+          resources:
+            requests:
+              cpu: 10m
+              memory: 8Mi

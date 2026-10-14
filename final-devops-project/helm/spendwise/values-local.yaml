@@ -1,0 +1,19 @@
+# Minikube with images built locally and loaded with `minikube image load`.
+backend:
+  image:
+    repository: spendwise-backend
+    tag: local
+frontend:
+  image:
+    repository: spendwise-frontend
+    tag: local
+ingress:
+  hosts:
+    - spendwise.local
+monitoring:
+  serviceMonitor:
+    enabled: true
+  rules:
+    enabled: true
+  dashboard:
+    enabled: true

@@ -1,0 +1,78 @@
+# Before: Prometheus scrapes both backend Pods (health=up) and no SpendWise alert is active
+$ bash monitoring/prom.sh targets
+spendwise-backend spendwise-backend-5fc88b77b8-k566h http://10.244.0.214:8000/metrics health=up
+spendwise-backend spendwise-backend-5fc88b77b8-2hnzz http://10.244.0.215:8000/metrics health=up
+$ bash monitoring/prom.sh alerts
+(no spendwise alerts pending or firing)
+# INJECT fault 4: helm upgrade with troubleshooting/break-4-metrics-path.yaml
+$ helm upgrade spendwise helm/spendwise -n spendwise -f helm/spendwise/values-local.yaml -f troubleshooting/break-4-metrics-path.yaml | head -6
+Release "spendwise" has been upgraded. Happy Helming!
+NAME: spendwise
+LAST DEPLOYED: Tue Oct 13 19:25:36 2026
+NAMESPACE: spendwise
+STATUS: deployed
+REVISION: 14
+# Wait for the Prometheus Operator to regenerate the scrape config and for the next scrape
+$ SECONDS=0; until bash monitoring/prom.sh targets | grep -q 'health=down'; do sleep 5; done; echo "targets went down after ${SECONDS}s"
+targets went down after 55s
+# IDENTIFY: users notice nothing (the app still answers), but monitoring has gone blind: both targets are down and up = 0
+$ curl -s -o /dev/null -w 'GET /api/summary -> HTTP %{http_code}\n' -H 'Host: spendwise.local' http://127.0.0.1:18080/api/summary
+GET /api/summary -> HTTP 200
+$ bash monitoring/prom.sh targets
+spendwise-backend spendwise-backend-5fc88b77b8-2hnzz http://10.244.0.215:8000/metric health=unknown
+spendwise-backend spendwise-backend-5fc88b77b8-k566h http://10.244.0.214:8000/metric health=down error='server returned HTTP status 404 Not Found'
+$ bash monitoring/prom.sh query 'up{namespace="spendwise"}'
+job=spendwise-backend pod=spendwise-backend-5fc88b77b8-k566h => 0
+job=spendwise-backend pod=spendwise-backend-5fc88b77b8-2hnzz => 1
+# One scrape later both targets are down
+$ until [ "$(bash monitoring/prom.sh targets | grep -c 'health=down')" = 2 ]; do sleep 5; done; bash monitoring/prom.sh targets
+spendwise-backend spendwise-backend-5fc88b77b8-k566h http://10.244.0.214:8000/metric health=down error='server returned HTTP status 404 Not Found'
+spendwise-backend spendwise-backend-5fc88b77b8-2hnzz http://10.244.0.215:8000/metric health=down error='server returned HTTP status 404 Not Found'
+$ bash monitoring/prom.sh query 'up{namespace="spendwise"}'
+job=spendwise-backend pod=spendwise-backend-5fc88b77b8-k566h => 0
+job=spendwise-backend pod=spendwise-backend-5fc88b77b8-2hnzz => 0
+$ bash monitoring/prom.sh query 'sum(up{namespace="spendwise",job="spendwise-backend"})'
+{} => 0
+# The SpendWiseBackendDown rule (sum(up) == 0 for 1m) goes pending, then firing, and Prometheus sends it to Alertmanager
+$ SECONDS=0; until bash monitoring/prom.sh alerts | grep -q 'state=firing'; do sleep 5; done; echo "alert firing after ${SECONDS}s"
+alert firing after 81s
+$ bash monitoring/prom.sh alerts
+SpendWiseBackendDown severity=critical state=firing activeAt=2026-10-13T13:56:46.418891421Z
+$ until bash monitoring/prom.sh am | grep -q SpendWiseBackendDown; do sleep 5; done; bash monitoring/prom.sh am
+SpendWiseBackendDown severity=critical state=active since=2026-10-13T13:57:46.418Z
+# INVESTIGATE: the scrape error is an HTTP 404, so Prometheus reaches the Pod but asks for a path the app does not serve
+$ kubectl get servicemonitor spendwise-backend -n spendwise -o jsonpath='{.spec.endpoints[0].port} {.spec.endpoints[0].path}'; echo
+http /metric
+$ kubectl -n spendwise exec deploy/spendwise-frontend -- wget -qO- http://spendwise-backend:8000/metric 2>&1 | head -2
+wget: server returned error: HTTP/1.1 404 Not Found
+command terminated with exit code 1
+$ kubectl -n spendwise exec deploy/spendwise-frontend -- wget -qO- http://spendwise-backend:8000/metrics | grep -m2 '^spendwise_http_requests_total'
+spendwise_http_requests_total{method="GET",route="/health",status="200"} 134.0
+spendwise_http_requests_total{method="GET",route="/api/expenses",status="200"} 948.0
+# ROOT CAUSE: the ServiceMonitor endpoint path is /metric, but FastAPI exposes Prometheus metrics at /metrics -> every scrape gets 404 -> up = 0
+# FIX: redeploy with the correct path (monitoring.serviceMonitor.path: /metrics from values.yaml)
+$ helm upgrade spendwise helm/spendwise -n spendwise -f helm/spendwise/values-local.yaml --wait --timeout 5m | head -6
+Release "spendwise" has been upgraded. Happy Helming!
+NAME: spendwise
+LAST DEPLOYED: Tue Oct 13 19:28:22 2026
+NAMESPACE: spendwise
+STATUS: deployed
+REVISION: 15
+$ kubectl get servicemonitor spendwise-backend -n spendwise -o jsonpath='{.spec.endpoints[0].port} {.spec.endpoints[0].path}'; echo
+http /metrics
+# VERIFY: both targets are up again and the alert resolves
+$ SECONDS=0; until [ "$(bash monitoring/prom.sh targets | grep -c 'health=up')" = 2 ]; do sleep 5; done; echo "targets up after ${SECONDS}s"; bash monitoring/prom.sh targets
+targets up after 30s
+spendwise-backend spendwise-backend-5fc88b77b8-k566h http://10.244.0.214:8000/metrics health=up
+spendwise-backend spendwise-backend-5fc88b77b8-2hnzz http://10.244.0.215:8000/metrics health=up
+$ bash monitoring/prom.sh query 'up{namespace="spendwise"}'
+job=spendwise-backend pod=spendwise-backend-5fc88b77b8-k566h => 1
+job=spendwise-backend pod=spendwise-backend-5fc88b77b8-2hnzz => 1
+$ SECONDS=0; until bash monitoring/prom.sh alerts | grep -q 'no spendwise alerts'; do sleep 5; done; echo "alert resolved after ${SECONDS}s"; bash monitoring/prom.sh alerts
+alert resolved after 25s
+(no spendwise alerts pending or firing)
+$ bash monitoring/prom.sh query 'sum by (route) (rate(spendwise_http_requests_total[1m]))'
+route=/health => 0.31825623706377537
+route=/api/expenses => 2.428169611600499
+route=/api/summary => 1.1109652217447903
+route=unmatched => 0

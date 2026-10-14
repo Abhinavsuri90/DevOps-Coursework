@@ -1,0 +1,56 @@
+# M6 DevSecOps - local dry run of the pipeline's security stages (same tools and versions as CI)
+$ bandit -c application/backend/pyproject.toml -r application/backend/app --severity-level medium 2>&1 | grep -E 'No issues|Total issues|High:|Medium:' | head -4
+	No issues identified.
+	Total issues (by severity):
+		Medium: 0
+		High: 0
+$ pip-audit -r application/backend/requirements.txt --strict 2>&1 | tail -2
+No known vulnerabilities found
+$ cd application/frontend && npm audit --audit-level=high 2>&1 | tail -2
+found 0 vulnerabilities
+$ docker run --rm -v "$PWD:/src" -w /src aquasec/trivy:0.74.0 fs --config security/trivy.yaml --format table application 2>&1 | grep -E 'Target|requirements|package-lock|─ ' | head -8
+│           Target           │ Type │ Vulnerabilities │
+│ backend/requirements.txt   │ pip  │        0        │
+│ frontend/package-lock.json │ npm  │        0        │
+$ docker run --rm -v "$PWD:/src" zricethezav/gitleaks:v8.30.1 dir /src --config /src/security/gitleaks.toml --redact --exit-code 1 2>&1 | tail -2
+1:32PM INF scanned ~98502 bytes (98.50 KB) in 63.7ms
+1:32PM WRN leaks found: 1
+# The one finding is docker/.env (the random POSTGRES_PASSWORD for docker compose). It is git-ignored, so it never reaches GitHub - Gitleaks still caught a real secret on disk:
+$ docker run --rm -v "$PWD:/src" zricethezav/gitleaks:v8.30.1 dir /src --config /src/security/gitleaks.toml --redact --verbose 2>&1 | grep -E 'RuleID|File|Secret'
+Secret:      REDACTED
+RuleID:      generic-api-key
+File:        /src/docker/.env
+$ git check-ignore -v docker/.env
+final-devops-project/.gitignore:3:docker/.env	docker/.env
+# CI scans a fresh checkout, so scan only what Git would publish (tracked + not-ignored files):
+$ git ls-files --cached --others --exclude-standard . | rsync -a --files-from=- . /tmp/scratchpad/publishable/ && find /tmp/scratchpad/publishable -type f | wc -l
+      79
+$ docker run --rm -v "/tmp/scratchpad/publishable:/src" zricethezav/gitleaks:v8.30.1 dir /src --config /src/security/gitleaks.toml --redact --exit-code 1 2>&1 | tail -1
+1:32PM INF no leaks found
+# Container image scans (Trivy, fails on fixable HIGH/CRITICAL)
+$ docker run --rm -v "$PWD:/src" -w /src aquasec/trivy:0.74.0 image --config security/trivy.yaml --input image-backend.tar.gz --format table 2>&1 | grep -E 'Report Summary|Target|alpine|METADATA|─┤|Legend' | head -4; echo "backend trivy exit code: ${pipestatus[1]:-${PIPESTATUS[0]}}"
+2026-10-13T13:34:20Z	INFO	[python] Licenses acquired from one or more METADATA files may be subject to additional terms. Use `--debug` flag to see all affected packages.
+2026-10-13T13:34:20Z	INFO	Detected OS	family="alpine" version="3.24.2"
+2026-10-13T13:34:20Z	WARN	This OS version is not on the EOL list	family="alpine" version="3.24"
+2026-10-13T13:34:20Z	INFO	[alpine] Detecting vulnerabilities...	os_version="3.24" repository="3.24" pkg_num=29
+backend trivy exit code: 0
+$ docker run --rm -v "$PWD:/src" -w /src aquasec/trivy:0.74.0 image --config security/trivy.yaml --input image-frontend.tar.gz --format table 2>&1 | grep -E 'Target|alpine|Library|│ [a-z]' | head -14; echo "frontend trivy exit code: ${pipestatus[1]:-${PIPESTATUS[0]}}"
+2026-10-13T13:34:47Z	INFO	Detected OS	family="alpine" version="3.24.2"
+2026-10-13T13:34:47Z	WARN	This OS version is not on the EOL list	family="alpine" version="3.24"
+2026-10-13T13:34:47Z	INFO	[alpine] Detecting vulnerabilities...	os_version="3.24" repository="3.24" pkg_num=70
+│                Target                 │  Type  │ Vulnerabilities │
+│ image-frontend.tar.gz (alpine 3.24.2) │ alpine │        0        │
+frontend trivy exit code: 0
+$ docker run --rm -v "$PWD:/src" -w /src aquasec/trivy:0.74.0 image --config security/trivy.yaml --input image-backend.tar.gz --format table 2>/dev/null | grep -E 'Target|alpine 3|python-pkg' | sed -E 's/  +/ /g' | head -12
+│ Target │ Type │ Vulnerabilities │
+│ image-backend.tar.gz (alpine 3.24.2) │ alpine │ 0 │
+│ usr/local/lib/python3.13/site-packages/alembic-1.20.0.dist-info/METADATA │ python-pkg │ 0 │
+│ usr/local/lib/python3.13/site-packages/annotated_doc-0.0.5.dist-info/METADATA │ python-pkg │ 0 │
+│ usr/local/lib/python3.13/site-packages/annotated_types-0.8.0.dist-info/METADATA │ python-pkg │ 0 │
+│ usr/local/lib/python3.13/site-packages/anyio-4.15.1.dist-info/METADATA │ python-pkg │ 0 │
+│ usr/local/lib/python3.13/site-packages/click-8.5.0.dist-info/METADATA │ python-pkg │ 0 │
+│ usr/local/lib/python3.13/site-packages/fastapi-0.143.0.dist-info/METADATA │ python-pkg │ 0 │
+│ usr/local/lib/python3.13/site-packages/h11-0.16.0.dist-info/METADATA │ python-pkg │ 0 │
+│ usr/local/lib/python3.13/site-packages/idna-3.20.dist-info/METADATA │ python-pkg │ 0 │
+│ usr/local/lib/python3.13/site-packages/mako-1.4.3.dist-info/METADATA │ python-pkg │ 0 │
+│ usr/local/lib/python3.13/site-packages/markupsafe-3.0.4.dist-info/METADATA │ python-pkg │ 0 │

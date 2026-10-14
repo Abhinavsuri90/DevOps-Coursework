@@ -1,0 +1,36 @@
+# Access through the Ingress (ingress-nginx controller port-forwarded to 127.0.0.1:18080; host spendwise.local)
+$ kubectl describe ingress spendwise -n spendwise | sed -n '/^Rules:/,/^Annotations:/p'
+Rules:
+  Host             Path  Backends
+  ----             ----  --------
+  spendwise.local  
+                   /api   spendwise-backend:http (10.244.0.207:8000,10.244.0.208:8000)
+                   /      spendwise-frontend:http (10.244.0.201:8080,10.244.0.202:8080)
+Annotations:       meta.helm.sh/release-name: spendwise
+$ curl -s -H 'Host: spendwise.local' http://127.0.0.1:18080/ | grep -o '<title>.*</title>'
+<title>SpendWise</title>
+$ curl -s -H 'Host: spendwise.local' http://127.0.0.1:18080/api/summary
+{"total":"0","count":0,"by_category":[]}
+$ curl -s -X POST -H 'Host: spendwise.local' -H 'Content-Type: application/json' http://127.0.0.1:18080/api/expenses -d '{"title":"Hostel rent - October","amount":"9000.00","category":"rent","spent_on":"2026-10-01"}'
+{"title":"Hostel rent - October","amount":"9000.00","category":"rent","spent_on":"2026-10-01","notes":null,"id":1}
+$ curl -s -X POST -H 'Host: spendwise.local' -H 'Content-Type: application/json' http://127.0.0.1:18080/api/expenses -d '{"title":"Canteen thali","amount":"95.00","category":"food","spent_on":"2026-10-08"}'
+{"title":"Canteen thali","amount":"95.00","category":"food","spent_on":"2026-10-08","notes":null,"id":2}
+$ curl -s -X POST -H 'Host: spendwise.local' -H 'Content-Type: application/json' http://127.0.0.1:18080/api/expenses -d '{"title":"Cloud Native DevOps book","amount":"1299.00","category":"books","spent_on":"2026-10-06"}'
+{"title":"Cloud Native DevOps book","amount":"1299.00","category":"books","spent_on":"2026-10-06","notes":null,"id":3}
+$ curl -s -X POST -H 'Host: spendwise.local' -H 'Content-Type: application/json' http://127.0.0.1:18080/api/expenses -d '{"title":"Bus pass","amount":"650.00","category":"travel","spent_on":"2026-10-02"}'
+{"title":"Bus pass","amount":"650.00","category":"travel","spent_on":"2026-10-02","notes":null,"id":4}
+$ curl -s -X POST -H 'Host: spendwise.local' -H 'Content-Type: application/json' http://127.0.0.1:18080/api/expenses -d '{"title":"Hackathon snacks","amount":"240.00","category":"fun","spent_on":"2026-10-11"}'
+{"title":"Hackathon snacks","amount":"240.00","category":"fun","spent_on":"2026-10-11","notes":null,"id":5}
+$ curl -s -H 'Host: spendwise.local' http://127.0.0.1:18080/api/summary
+{"total":"11284.00","count":5,"by_category":[{"category":"rent","total":"9000.00","count":1},{"category":"books","total":"1299.00","count":1},{"category":"travel","total":"650.00","count":1},{"category":"fun","total":"240.00","count":1},{"category":"food","total":"95.00","count":1}]}
+# The backend's /metrics is not routed by the Ingress: /metrics falls under '/', so the frontend serves its index.html (SPA fallback)
+$ curl -s -H 'Host: spendwise.local' http://127.0.0.1:18080/metrics | head -c 60; echo
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset=
+$ kubectl -n spendwise exec deploy/spendwise-frontend -- wget -qO- http://spendwise-backend:8000/metrics | grep -E '^spendwise_(http_requests_total|expenses_created_total)' | head -8
+spendwise_http_requests_total{method="GET",route="/health",status="200"} 13.0
+spendwise_http_requests_total{method="GET",route="/api/summary",status="200"} 3.0
+spendwise_http_requests_total{method="POST",route="/api/expenses",status="201"} 1.0
+spendwise_expenses_created_total{category="books"} 1.0

@@ -1,0 +1,20 @@
+# Values used by Argo CD (GitOps). The CI pipeline rewrites the two image tags below
+# after it has pushed new images to GHCR, then commits this file back to main.
+backend:
+  image:
+    repository: ghcr.io/abhinavsuri90/spendwise-backend
+    tag: "pending"
+frontend:
+  image:
+    repository: ghcr.io/abhinavsuri90/spendwise-frontend
+    tag: "pending"
+ingress:
+  hosts:
+    - spendwise.local
+monitoring:
+  serviceMonitor:
+    enabled: true
+  rules:
+    enabled: true
+  dashboard:
+    enabled: true

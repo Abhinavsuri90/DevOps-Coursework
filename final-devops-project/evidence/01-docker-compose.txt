@@ -1,0 +1,75 @@
+# M4 Docker: build and start the whole stack (run from final-devops-project/docker; .env holds a random POSTGRES_PASSWORD and is git-ignored)
+$ docker compose up --build --detach 2>&1 | grep -v -E '^ *#[0-9]+ (sha256|extracting|resolve|transferring|\[internal\] load)' | tail -25
+#29 unpacking to docker.io/library/spendwise-backend:local 0.3s done
+#29 DONE 1.8s
+
+#30 [backend] resolving provenance for metadata file
+#30 DONE 0.0s
+ Image spendwise-backend:local Built 
+ Image spendwise-frontend:local Built 
+ Network spendwise_default Creating 
+ Network spendwise_default Created 
+ Volume spendwise_pgdata Creating 
+ Volume spendwise_pgdata Created 
+ Container spendwise-postgres-1 Creating 
+ Container spendwise-postgres-1 Created 
+ Container spendwise-backend-1 Creating 
+ Container spendwise-backend-1 Created 
+ Container spendwise-frontend-1 Creating 
+ Container spendwise-frontend-1 Created 
+ Container spendwise-postgres-1 Starting 
+ Container spendwise-postgres-1 Started 
+ Container spendwise-postgres-1 Waiting 
+ Container spendwise-postgres-1 Healthy 
+ Container spendwise-backend-1 Starting 
+ Container spendwise-backend-1 Started 
+ Container spendwise-frontend-1 Starting 
+ Container spendwise-frontend-1 Started 
+$ docker compose ps
+NAME                   IMAGE                      COMMAND                  SERVICE    CREATED         STATUS                            PORTS
+spendwise-backend-1    spendwise-backend:local    "./entrypoint.sh"        backend    8 seconds ago   Up 2 seconds (health: starting)   0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+spendwise-frontend-1   spendwise-frontend:local   "/docker-entrypoint.…"   frontend   8 seconds ago   Up 2 seconds                      0.0.0.0:3000->8080/tcp, [::]:3000->8080/tcp
+spendwise-postgres-1   postgres:17-alpine         "docker-entrypoint.s…"   postgres   9 seconds ago   Up 8 seconds (healthy)            5432/tcp
+$ docker compose logs backend 2>&1 | grep -E 'alembic|Running upgrade|Uvicorn running|Application startup' | head -6
+backend-1  | INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+backend-1  | INFO  [alembic.runtime.migration] Will assume transactional DDL.
+backend-1  | INFO  [alembic.runtime.migration] Running upgrade  -> 0001, create expenses table
+backend-1  | INFO:     Application startup complete.
+backend-1  | INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+# Smoke test through the frontend's nginx (/api is proxied to the backend)
+$ curl -s http://localhost:3000/healthz
+ok
+$ curl -s http://localhost:8000/health
+{"status":"ok","database":"ok","version":"compose"}
+$ curl -s -X POST http://localhost:3000/api/expenses -H 'Content-Type: application/json' -d '{"title":"Mess fees - October","amount":"3500.00","category":"food","spent_on":"2026-10-01"}'
+{"title":"Mess fees - October","amount":"3500.00","category":"food","spent_on":"2026-10-01","notes":null,"id":1}
+$ curl -s -X POST http://localhost:3000/api/expenses -H 'Content-Type: application/json' -d '{"title":"Kubernetes in Action","amount":"1450.00","category":"books","spent_on":"2026-10-05"}'
+{"title":"Kubernetes in Action","amount":"1450.00","category":"books","spent_on":"2026-10-05","notes":null,"id":2}
+$ curl -s -X POST http://localhost:3000/api/expenses -H 'Content-Type: application/json' -d '{"title":"Metro card recharge","amount":"500.00","category":"travel","spent_on":"2026-10-09"}'
+{"title":"Metro card recharge","amount":"500.00","category":"travel","spent_on":"2026-10-09","notes":null,"id":3}
+$ curl -s http://localhost:3000/api/summary
+{"total":"5450.00","count":3,"by_category":[{"category":"food","total":"3500.00","count":1},{"category":"books","total":"1450.00","count":1},{"category":"travel","total":"500.00","count":1}]}
+$ docker compose exec backend id; docker compose exec frontend id
+uid=10001(spendwise) gid=10001(spendwise) groups=10001(spendwise)
+uid=101(nginx) gid=101(nginx) groups=101(nginx)
+$ docker compose exec postgres psql -U spendwise -d spendwise -c 'select version_num from alembic_version;' -c '\dt'
+ version_num 
+-------------
+ 0001
+(1 row)
+
+              List of relations
+ Schema |      Name       | Type  |   Owner   
+--------+-----------------+-------+-----------
+ public | alembic_version | table | spendwise
+ public | expenses        | table | spendwise
+(2 rows)
+
+# Stop the stack (named volume removed too)
+$ docker compose down --volumes 2>&1 | tail -6
+ Container spendwise-postgres-1 Removing 
+ Container spendwise-postgres-1 Removed 
+ Network spendwise_default Removing 
+ Volume spendwise_pgdata Removing 
+ Volume spendwise_pgdata Removed 
+ Network spendwise_default Removed 

@@ -30,6 +30,8 @@ def main():
     parser.add_argument("--wait-ms", type=int, default=4000, help="virtual time for JavaScript to run")
     parser.add_argument("--address-bar", action="store_true",
                         help="show the URL above the page (the live page is loaded in an iframe)")
+    parser.add_argument("--map-host", action="append", default=[], metavar="HOST=IP",
+                        help="resolve HOST to IP inside Chrome only (e.g. spendwise.local=127.0.0.1)")
     args = parser.parse_args()
 
     width, height = args.size.lower().split("x")
@@ -55,12 +57,14 @@ def main():
                     f"height:{int(height) - 44}px'></iframe></body></html>"
                 )
             target = f"file://{frame}"
+        host_rules = [f"--host-resolver-rules={', '.join('MAP ' + m.replace('=', ' ', 1) for m in args.map_host)}"] \
+            if args.map_host else []
         chrome = subprocess.Popen(
             [
                 CHROME, "--headless=old", "--disable-gpu", "--hide-scrollbars",
                 "--force-device-scale-factor=1", f"--user-data-dir={tmp}/profile",
                 f"--window-size={width},{height}", f"--virtual-time-budget={args.wait_ms}",
-                f"--screenshot={out_path}", target,
+                *host_rules, f"--screenshot={out_path}", target,
             ],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )

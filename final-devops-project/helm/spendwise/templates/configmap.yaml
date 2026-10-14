@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+  labels:
+    {{- include "spendwise.labels" . | nindent 4 }}
+data:
+  DB_HOST: {{ include "spendwise.db.name" . }}
+  DB_PORT: "5432"
+  DB_NAME: {{ .Values.database.name | quote }}
+  DB_USER: {{ .Values.database.user | quote }}
+  BACKEND_HOST: {{ include "spendwise.backend.name" . }}
+  BACKEND_PORT: "8000"

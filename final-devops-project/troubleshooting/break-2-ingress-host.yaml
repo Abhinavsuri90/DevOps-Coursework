@@ -1,0 +1,4 @@
+# Injected fault 2: typo in the Ingress host ("spendwise.locl" instead of "spendwise.local").
+ingress:
+  hosts:
+    - spendwise.locl

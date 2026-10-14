@@ -1,0 +1,4 @@
+# Injected fault 4: Prometheus scrapes /metric instead of /metrics.
+monitoring:
+  serviceMonitor:
+    path: /metric

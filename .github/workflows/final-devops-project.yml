@@ -1,0 +1,294 @@
+# Final DevOps project - SpendWise CI/CD + DevSecOps + GitOps
+#   build & test -> security scanning -> Docker images + image scan -> security gate
+#   -> push to GHCR (git SHA tags) -> deploy with Helm to Kubernetes (kind) -> GitOps tag update
+# A copy lives in final-devops-project/.github/workflows/ (the test job checks they match).
+name: "Final project · SpendWise CI/CD"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "final-devops-project/**"
+      - ".github/workflows/final-devops-project.yml"
+      - "!final-devops-project/helm/spendwise/values-gitops.yaml"
+      - "!final-devops-project/evidence/**"
+      - "!final-devops-project/screenshots/**"
+      - "!final-devops-project/**/*.md"
+  pull_request:
+    paths:
+      - "final-devops-project/**"
+      - ".github/workflows/final-devops-project.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: final-project-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PROJECT_DIR: final-devops-project
+  TRIVY_IMAGE: aquasec/trivy:0.74.0
+  GITLEAKS_IMAGE: zricethezav/gitleaks:v8.30.1
+
+jobs:
+  backend-test:
+    name: Backend · lint + pytest
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: final-devops-project/application/backend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: final-devops-project/application/backend/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - name: Ruff
+        run: ruff check .
+      - name: Pytest (SQLite test database)
+        run: pytest --cov=app --cov-report=term-missing --cov-report=xml --junitxml=junit.xml
+      - name: Workflow copy matches the active workflow
+        working-directory: .
+        run: diff -u .github/workflows/final-devops-project.yml final-devops-project/.github/workflows/final-devops-project.yml
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: backend-test-report
+          path: |
+            final-devops-project/application/backend/junit.xml
+            final-devops-project/application/backend/coverage.xml
+
+  frontend-build:
+    name: Frontend · npm ci + build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: final-devops-project/application/frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: final-devops-project/application/frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: frontend-dist
+          path: final-devops-project/application/frontend/dist/
+
+  sast:
+    name: SAST · Bandit + CodeQL
+    needs: [backend-test, frontend-build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: pip install bandit==1.9.4
+      - name: Bandit (fails on medium or high)
+        working-directory: final-devops-project/application/backend
+        run: bandit -c pyproject.toml -r app --severity-level medium
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: python, javascript-typescript
+          build-mode: none
+          source-root: final-devops-project/application
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: final-project-sast
+
+  sca:
+    name: SCA · pip-audit + npm audit + Trivy fs
+    needs: [backend-test, frontend-build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: pip install pip-audit==2.10.1
+      - name: pip-audit
+        run: pip-audit -r final-devops-project/application/backend/requirements.txt --strict
+      - name: npm audit (high and critical)
+        working-directory: final-devops-project/application/frontend
+        run: npm audit --audit-level=high
+      - name: Trivy filesystem scan
+        run: |
+          docker run --rm -v "$PWD/$PROJECT_DIR:/src" -w /src "$TRIVY_IMAGE" fs \
+            --config security/trivy.yaml --format table application
+
+  secret-scan:
+    name: Secret scan · Gitleaks
+    needs: [backend-test, frontend-build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Gitleaks
+        run: |
+          docker run --rm -v "$PWD/$PROJECT_DIR:/src" "$GITLEAKS_IMAGE" dir /src \
+            --config /src/security/gitleaks.toml --redact --verbose --exit-code 1
+
+  build-images:
+    name: Docker build + Trivy · ${{ matrix.component }}
+    needs: [sast, sca, secret-scan]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build
+        working-directory: final-devops-project
+        run: |
+          docker build -f docker/${{ matrix.component }}.Dockerfile \
+            --build-arg "APP_VERSION=${GITHUB_SHA::12}" \
+            -t spendwise-${{ matrix.component }}:${{ github.sha }} .
+          docker image ls spendwise-${{ matrix.component }}
+          docker save spendwise-${{ matrix.component }}:${{ github.sha }} | gzip > image-${{ matrix.component }}.tar.gz
+      - name: Trivy image scan (fails on fixable HIGH/CRITICAL)
+        working-directory: final-devops-project
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src "$TRIVY_IMAGE" image \
+            --config security/trivy.yaml --input image-${{ matrix.component }}.tar.gz --format table
+      - uses: actions/upload-artifact@v7
+        with:
+          name: image-${{ matrix.component }}
+          path: final-devops-project/image-${{ matrix.component }}.tar.gz
+          retention-days: 1
+
+  security-gate:
+    name: Security gate
+    needs: [sast, sca, secret-scan, build-images]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All security checks must pass
+        run: |
+          {
+            echo "### Security gate"
+            echo "| Check | Result |"
+            echo "| --- | --- |"
+            echo "| SAST (Bandit, CodeQL) | ${{ needs.sast.result }} |"
+            echo "| SCA (pip-audit, npm audit, Trivy fs) | ${{ needs.sca.result }} |"
+            echo "| Secret scan (Gitleaks) | ${{ needs.secret-scan.result }} |"
+            echo "| Image scan (Trivy) | ${{ needs.build-images.result }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for result in "${{ needs.sast.result }}" "${{ needs.sca.result }}" "${{ needs.secret-scan.result }}" "${{ needs.build-images.result }}"; do
+            [ "$result" = "success" ] || { echo "Security gate FAILED ($result)"; exit 1; }
+          done
+          echo "Security gate PASSED"
+
+  push-images:
+    name: Push to GHCR · ${{ matrix.component }}
+    needs: security-gate
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        component: [backend, frontend]
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: image-${{ matrix.component }}
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Tag with the commit SHA and push
+        run: |
+          owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          image="ghcr.io/${owner}/spendwise-${{ matrix.component }}:${GITHUB_SHA::12}"
+          docker load -i image-${{ matrix.component }}.tar.gz
+          docker tag "spendwise-${{ matrix.component }}:${GITHUB_SHA}" "$image"
+          docker push "$image"
+          echo "Pushed $image" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Deploy with Helm to Kubernetes (kind)
+    needs: push-images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: spendwise
+      - name: Install the ingress-nginx controller
+        run: |
+          helm upgrade --install ingress-nginx ingress-nginx \
+            --repo https://kubernetes.github.io/ingress-nginx -n ingress-nginx --create-namespace \
+            --set controller.service.type=ClusterIP --set controller.admissionWebhooks.enabled=false \
+            --wait --timeout 5m
+      - name: Helm upgrade --install
+        working-directory: final-devops-project
+        run: |
+          owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          tag="${GITHUB_SHA::12}"
+          kubectl apply -f kubernetes/namespace.yaml
+          bash kubernetes/create-db-secret.sh spendwise
+          kubectl -n spendwise create secret docker-registry ghcr-pull \
+            --docker-server=ghcr.io --docker-username='${{ github.actor }}' \
+            --docker-password='${{ secrets.GITHUB_TOKEN }}'
+          helm upgrade --install spendwise helm/spendwise -n spendwise \
+            --set backend.image.repository="ghcr.io/${owner}/spendwise-backend" --set backend.image.tag="$tag" \
+            --set frontend.image.repository="ghcr.io/${owner}/spendwise-frontend" --set frontend.image.tag="$tag" \
+            --set 'imagePullSecrets[0].name=ghcr-pull' \
+            --wait --timeout 6m
+          kubectl get pods,svc,ingress,hpa,pvc -n spendwise
+          helm test spendwise -n spendwise --logs
+      - name: Smoke test through the Ingress
+        run: |
+          kubectl -n ingress-nginx port-forward svc/ingress-nginx-controller 8080:80 >/dev/null 2>&1 &
+          sleep 5
+          curl -fsS -H 'Host: spendwise.local' http://127.0.0.1:8080/ | grep -o '<title>.*</title>'
+          curl -fsS -H 'Host: spendwise.local' -H 'Content-Type: application/json' -X POST \
+            http://127.0.0.1:8080/api/expenses \
+            -d '{"title":"CI smoke test","amount":"1.00","category":"other","spent_on":"2026-10-13"}'
+          echo
+          curl -fsS -H 'Host: spendwise.local' http://127.0.0.1:8080/api/summary | tee summary.json
+          echo
+          grep -q '"count":1' summary.json
+
+  gitops-update:
+    name: GitOps · bump image tags for Argo CD
+    needs: deploy
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - name: Update values-gitops.yaml and push
+        run: |
+          tag="${GITHUB_SHA::12}"
+          file=final-devops-project/helm/spendwise/values-gitops.yaml
+          yq -i ".backend.image.tag = \"$tag\" | .frontend.image.tag = \"$tag\"" "$file"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$file"
+          if git diff --cached --quiet; then echo "tags already at $tag"; exit 0; fi
+          git commit -m "gitops: deploy spendwise ${tag}"
+          for _ in 1 2 3; do
+            git push origin HEAD:main && break
+            git pull --rebase origin main
+          done
+          echo "Argo CD will roll out spendwise ${tag}" >> "$GITHUB_STEP_SUMMARY"

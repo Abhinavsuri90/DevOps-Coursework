@@ -1,0 +1,82 @@
+# NOTE (added after the run): during VERIFY the laptop lid was closed and macOS slept (pmset: 'Clamshell Sleep' 19:34 -> wake 20:31).
+# Minikube was frozen, so 'ScalingActive=True after 2551s' is mostly sleep time, and right after the wake the HPA saw a
+# CPU burst (340%) and scaled to 4. That burst was not part of this fault. The fault itself (missing request for cpu) and its fix are shown above it.
+# Before: the HPA reads CPU utilisation (usage / request) for the backend Pods
+$ kubectl get hpa -n spendwise
+NAME                REFERENCE                      TARGETS        MINPODS   MAXPODS   REPLICAS   AGE
+spendwise-backend   Deployment/spendwise-backend   cpu: 27%/70%   2         5         2          49m
+# INJECT fault 5: helm upgrade with troubleshooting/break-5-hpa-requests.yaml
+$ helm upgrade spendwise helm/spendwise -n spendwise -f helm/spendwise/values-local.yaml -f troubleshooting/break-5-hpa-requests.yaml --wait --timeout 5m | head -6
+Release "spendwise" has been upgraded. Happy Helming!
+NAME: spendwise
+LAST DEPLOYED: Tue Oct 13 19:32:59 2026
+NAMESPACE: spendwise
+STATUS: deployed
+REVISION: 18
+# IDENTIFY: the app is healthy, but the HPA target shows <unknown> and autoscaling has stopped
+$ SECONDS=0; until kubectl get hpa spendwise-backend -n spendwise -o jsonpath='{.status.conditions[?(@.type=="ScalingActive")].status}' | grep -q False; do sleep 5; done; echo "ScalingActive=False after ${SECONDS}s"
+ScalingActive=False after 5s
+$ kubectl get hpa,deploy -n spendwise
+NAME                                                    REFERENCE                      TARGETS              MINPODS   MAXPODS   REPLICAS   AGE
+horizontalpodautoscaler.autoscaling/spendwise-backend   Deployment/spendwise-backend   cpu: <unknown>/70%   2         5         2          50m
+
+NAME                                 READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/spendwise-backend    2/2     2            2           50m
+deployment.apps/spendwise-frontend   2/2     2            2           50m
+deployment.apps/spendwise-traffic    1/1     1            1           38m
+$ kubectl describe hpa spendwise-backend -n spendwise | sed -n '/^Conditions:/,/^Events:/p' | cut -c1-220
+Conditions:
+  Type            Status  Reason                   Message
+  ----            ------  ------                   -------
+  AbleToScale     True    SucceededGetScale        the HPA controller was able to get the target's current scale
+  ScaledToZero    False   NotScaledToZero          the HPA controller did not scale the workload to zero
+  ScalingActive   False   FailedGetResourceMetric  the HPA was unable to compute the replica count: failed to get cpu utilization: unable to get metrics for resource cpu: no metrics returned from resource metrics API
+  ScalingLimited  False   DesiredWithinRange       the desired count is within the acceptable range
+Events:
+# INVESTIGATE: metrics-server still reports CPU usage for the new Pods, so the problem is the request the percentage is computed against
+$ kubectl get pods -n spendwise -l app.kubernetes.io/name=backend
+NAME                                 READY   STATUS    RESTARTS   AGE
+spendwise-backend-64884c5b8b-8bcd2   1/1     Running   0          71s
+spendwise-backend-64884c5b8b-lfvr9   1/1     Running   0          75s
+$ kubectl top pods -n spendwise -l app.kubernetes.io/name=backend
+NAME                                 CPU(cores)   MEMORY(bytes)   
+spendwise-backend-64884c5b8b-8bcd2   98m          63Mi            
+spendwise-backend-64884c5b8b-lfvr9   54m          63Mi            
+$ kubectl get deploy spendwise-backend -n spendwise -o jsonpath='{.spec.template.spec.containers[0].name}: {.spec.template.spec.containers[0].resources}'; echo
+api: {"limits":{"memory":"256Mi"},"requests":{"memory":"96Mi"}}
+# ROOT CAUSE: CPU utilisation = usage / requests.cpu. Container api has no CPU request (and no limit to default from), so the HPA cannot compute it
+# FIX: redeploy with the chart defaults (backend.resources.requests.cpu and limits.cpu from values.yaml)
+$ helm upgrade spendwise helm/spendwise -n spendwise -f helm/spendwise/values-local.yaml --wait --timeout 5m | head -6
+Release "spendwise" has been upgraded. Happy Helming!
+NAME: spendwise
+LAST DEPLOYED: Tue Oct 13 19:34:14 2026
+NAMESPACE: spendwise
+STATUS: deployed
+REVISION: 19
+$ kubectl get deploy spendwise-backend -n spendwise -o jsonpath='{.spec.template.spec.containers[0].name}: {.spec.template.spec.containers[0].resources}'; echo
+api: {"limits":{"cpu":"500m","memory":"256Mi"},"requests":{"cpu":"50m","memory":"96Mi"}}
+# VERIFY: the HPA reads a real percentage again and ScalingActive is True
+$ SECONDS=0; until kubectl get hpa spendwise-backend -n spendwise -o jsonpath='{.status.conditions[?(@.type=="ScalingActive")].status}' | grep -q True; do sleep 5; done; echo "ScalingActive=True after ${SECONDS}s"
+ScalingActive=True after 2551s
+$ kubectl get hpa -n spendwise
+NAME                REFERENCE                      TARGETS         MINPODS   MAXPODS   REPLICAS   AGE
+spendwise-backend   Deployment/spendwise-backend   cpu: 340%/70%   2         5         2          94m
+$ kubectl describe hpa spendwise-backend -n spendwise | sed -n '/^Conditions:/,/^Events:/p' | cut -c1-220
+Conditions:
+  Type            Status  Reason            Message
+  ----            ------  ------            -------
+  AbleToScale     True    SucceededRescale  the HPA controller was able to update the target scale to 4
+  ScaledToZero    False   NotScaledToZero   the HPA controller did not scale the workload to zero
+  ScalingActive   True    ValidMetricFound  the HPA was able to successfully calculate a replica count from cpu resource utilization (percentage of request)
+  ScalingLimited  True    ScaleUpLimit      the desired replica count is increasing faster than the maximum scale rate
+Events:
+$ kubectl get pods -n spendwise
+NAME                                 READY   STATUS     RESTARTS   AGE
+spendwise-backend-5fc88b77b8-6wvb6   0/1     Init:0/1   0          3s
+spendwise-backend-5fc88b77b8-9pp6b   0/1     Init:0/1   0          3s
+spendwise-backend-5fc88b77b8-cc2f6   1/1     Running    0          43m
+spendwise-backend-5fc88b77b8-x5qjh   1/1     Running    0          43m
+spendwise-frontend-968d984cc-q8dvl   1/1     Running    0          94m
+spendwise-frontend-968d984cc-v2vtv   1/1     Running    0          94m
+spendwise-postgres-0                 1/1     Running    0          57m
+spendwise-traffic-8d64946d9-snbfq    1/1     Running    0          83m

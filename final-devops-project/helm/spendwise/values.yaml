@@ -1,0 +1,74 @@
+# Default values. Environment-specific overrides: values-local.yaml (Minikube, locally built
+# images) and values-gitops.yaml (GHCR images; the CI pipeline updates the tags there).
+
+backend:
+  image:
+    repository: ghcr.io/abhinavsuri90/spendwise-backend
+    tag: ""            # set per environment (git SHA in CI/GitOps)
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 50m
+      memory: 96Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+
+frontend:
+  image:
+    repository: ghcr.io/abhinavsuri90/spendwise-frontend
+    tag: ""
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 10m
+      memory: 16Mi
+    limits:
+      memory: 64Mi
+
+database:
+  image: postgres:17-alpine
+  name: spendwise
+  user: spendwise
+  # The password is never stored in Git. Either create the Secret first
+  # (kubernetes/create-db-secret.sh) and reference it here ...
+  existingSecret: spendwise-db
+  # ... or set existingSecret: "" and pass --set database.password=... at install time.
+  password: ""
+  storage:
+    size: 1Gi
+    storageClassName: ""   # cluster default
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+ingress:
+  enabled: true
+  className: nginx
+  # Requests under this path go to the backend; everything else to the frontend.
+  apiPath: /api
+  hosts:
+    - spendwise.local
+
+imagePullSecrets: []
+
+monitoring:
+  # Requires the Prometheus Operator CRDs (kube-prometheus-stack).
+  serviceMonitor:
+    enabled: false
+    path: /metrics
+  rules:
+    enabled: false
+  # ConfigMap picked up by Grafana's dashboard sidecar (label grafana_dashboard=1).
+  dashboard:
+    enabled: false

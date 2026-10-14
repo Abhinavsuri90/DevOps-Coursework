@@ -1,0 +1,129 @@
+# M8 Kubernetes + Helm on Minikube (images built by Docker Compose, loaded with 'minikube image load')
+$ kubectl apply -f kubernetes/namespace.yaml
+namespace/spendwise created
+$ bash kubernetes/create-db-secret.sh spendwise
+secret/spendwise-db created in spendwise
+$ helm lint helm/spendwise -f helm/spendwise/values-local.yaml
+==> Linting helm/spendwise
+[INFO] Chart.yaml: icon is recommended
+
+1 chart(s) linted, 0 chart(s) failed
+$ helm upgrade --install spendwise helm/spendwise -n spendwise -f helm/spendwise/values-local.yaml --wait --timeout 6m
+Release "spendwise" does not exist. Installing it now.
+NAME: spendwise
+LAST DEPLOYED: Tue Oct 13 18:43:00 2026
+NAMESPACE: spendwise
+STATUS: deployed
+REVISION: 1
+DESCRIPTION: Install complete
+NOTES:
+SpendWise 1.0.0 is deployed as release "spendwise" in namespace spendwise.
+  backend:  spendwise-backend:local
+  frontend: spendwise-frontend:local
+Open: http://spendwise.local/   (API under /api)
+Check: kubectl get pods,svc,ingress,hpa -n spendwise
+$ helm list -n spendwise
+NAME     	NAMESPACE	REVISION	UPDATED                            	STATUS  	CHART          	APP VERSION
+spendwise	spendwise	1       	2026-10-13 18:43:00.20533 +0530 IST	deployed	spendwise-1.0.0	1.0.0      
+$ kubectl get pods -n spendwise -o wide
+NAME                                 READY   STATUS    RESTARTS      AGE   IP             NODE       NOMINATED NODE   READINESS GATES
+spendwise-backend-64bfffdbbd-42glf   1/1     Running   2 (17s ago)   22s   10.244.0.203   minikube   <none>           <none>
+spendwise-backend-64bfffdbbd-7nwp8   1/1     Running   2 (17s ago)   22s   10.244.0.200   minikube   <none>           <none>
+spendwise-frontend-968d984cc-q8dvl   1/1     Running   0             22s   10.244.0.201   minikube   <none>           <none>
+spendwise-frontend-968d984cc-v2vtv   1/1     Running   0             22s   10.244.0.202   minikube   <none>           <none>
+spendwise-postgres-0                 1/1     Running   0             22s   10.244.0.204   minikube   <none>           <none>
+$ kubectl get svc -n spendwise
+NAME                 TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)    AGE
+spendwise-backend    ClusterIP   10.109.57.48   <none>        8000/TCP   22s
+spendwise-frontend   ClusterIP   10.98.49.71    <none>        80/TCP     22s
+spendwise-postgres   ClusterIP   None           <none>        5432/TCP   22s
+$ kubectl get ingress,hpa,pvc,pdb -n spendwise
+NAME                                  CLASS   HOSTS             ADDRESS        PORTS   AGE
+ingress.networking.k8s.io/spendwise   nginx   spendwise.local   192.168.49.2   80      22s
+
+NAME                                                    REFERENCE                      TARGETS              MINPODS   MAXPODS   REPLICAS   AGE
+horizontalpodautoscaler.autoscaling/spendwise-backend   Deployment/spendwise-backend   cpu: <unknown>/70%   2         5         2          22s
+
+NAME                                              STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
+persistentvolumeclaim/data-spendwise-postgres-0   Bound    pvc-82e7404b-cc2f-4cb1-be20-0db1aa1e7f15   1Gi        RWO            standard       <unset>                 22s
+
+NAME                                            MIN AVAILABLE   MAX UNAVAILABLE   ALLOWED DISRUPTIONS   AGE
+poddisruptionbudget.policy/spendwise-backend    1               N/A               1                     22s
+poddisruptionbudget.policy/spendwise-frontend   1               N/A               1                     22s
+$ kubectl get configmap,secret -n spendwise -l app.kubernetes.io/part-of=spendwise 2>/dev/null; kubectl get secret spendwise-db -n spendwise
+NAME                                    DATA   AGE
+configmap/spendwise-config              6      22s
+configmap/spendwise-grafana-dashboard   1      22s
+NAME           TYPE     DATA   AGE
+spendwise-db   Opaque   1      23s
+$ kubectl logs -n spendwise deploy/spendwise-backend --tail=20 | grep -E 'Running upgrade|Will assume|Application startup|Uvicorn running' | head -5
+Found 2 pods, using pod/spendwise-backend-64bfffdbbd-42glf
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 0001, create expenses table
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+$ helm test spendwise -n spendwise --logs 2>&1 | tail -12
+NAMESPACE: spendwise
+STATUS: deployed
+REVISION: 1
+DESCRIPTION: Install complete
+TEST SUITE:     spendwise-test
+Last Started:   Tue Oct 13 18:43:22 2026
+Last Completed: Tue Oct 13 18:43:25 2026
+Phase:          Succeeded
+
+POD LOGS: spendwise-test (test)
+{"status":"ok","database":"ok","version":"local"}ok
+
+# Observed: on first install each backend Pod restarted twice (it started before PostgreSQL was ready, so the migration failed).
+# Fix: an init container (wait-for-db) runs pg_isready until the database answers. Upgrade the release:
+$ helm upgrade spendwise helm/spendwise -n spendwise -f helm/spendwise/values-local.yaml --wait --timeout 6m | head -7
+level=WARN msg="upgrade failed" name=spendwise error="resource Deployment/spendwise/spendwise-backend not ready. status: InProgress, message: Updated: 1/2\ncontext deadline exceeded"
+Error: UPGRADE FAILED: resource Deployment/spendwise/spendwise-backend not ready. status: InProgress, message: Updated: 1/2
+context deadline exceeded
+$ kubectl rollout status deployment/spendwise-backend -n spendwise --timeout=180s
+Waiting for deployment "spendwise-backend" rollout to finish: 1 out of 2 new replicas have been updated...
+error: timed out waiting for the condition
+$ kubectl get pods -n spendwise -l app.kubernetes.io/name=backend -o 'custom-columns=POD:.metadata.name,READY:.status.containerStatuses[0].ready,RESTARTS:.status.containerStatuses[0].restartCount,INIT:.spec.initContainers[0].name'
+POD                                  READY   RESTARTS   INIT
+spendwise-backend-64bfffdbbd-42glf   true    2          <none>
+spendwise-backend-64bfffdbbd-7nwp8   true    2          <none>
+spendwise-backend-78cfc8847-qlbvb    false   0          wait-for-db
+$ helm history spendwise -n spendwise
+REVISION	UPDATED                 	STATUS  	CHART          	APP VERSION	DESCRIPTION                                                                                                                     
+1       	Tue Oct 13 18:43:00 2026	deployed	spendwise-1.0.0	1.0.0      	Install complete                                                                                                                
+2       	Tue Oct 13 18:43:41 2026	failed  	spendwise-1.0.0	1.0.0      	Upgrade "spendwise" failed: resource Deployment/spendwise/spendwise-backend not ready. status: InProgress, message: Updated: ...
+# The upgrade timed out: the new Pod never left its init container. The old Pods kept serving (revision 2 = failed, revision 1 still running).
+$ kubectl logs -n spendwise spendwise-backend-78cfc8847-qlbvb -c wait-for-db --tail=2
+spendwise-postgres:5432 - no attempt
+waiting for database
+$ kubectl exec -n spendwise spendwise-backend-78cfc8847-qlbvb -c wait-for-db -- sh -c 'id; pg_isready -h "$DB_HOST" -p "$DB_PORT"; echo "exit=$?"; pg_isready -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME"; echo "exit=$?"'
+uid=10001 gid=0(root) groups=0(root)
+spendwise-postgres:5432 - no attempt
+exit=3
+spendwise-postgres:5432 - accepting connections
+exit=0
+# Root cause: without -U, pg_isready uses the OS user name; uid 10001 has no user entry in the postgres image, so it gives up ('no attempt', exit 3). Fix: pass -U and -d.
+$ helm upgrade spendwise helm/spendwise -n spendwise -f helm/spendwise/values-local.yaml --wait --timeout 6m | head -7
+Release "spendwise" has been upgraded. Happy Helming!
+NAME: spendwise
+LAST DEPLOYED: Tue Oct 13 18:53:11 2026
+NAMESPACE: spendwise
+STATUS: deployed
+REVISION: 3
+DESCRIPTION: Upgrade complete
+$ kubectl rollout status deployment/spendwise-backend -n spendwise --timeout=180s
+deployment "spendwise-backend" successfully rolled out
+$ kubectl get pods -n spendwise -o 'custom-columns=POD:.metadata.name,READY:.status.containerStatuses[0].ready,RESTARTS:.status.containerStatuses[0].restartCount,INIT:.spec.initContainers[0].name'
+POD                                  READY   RESTARTS   INIT
+spendwise-backend-64bfffdbbd-42glf   true    2          <none>
+spendwise-backend-75d9486d96-gppqg   true    0          wait-for-db
+spendwise-backend-75d9486d96-vgg2b   true    0          wait-for-db
+spendwise-frontend-968d984cc-q8dvl   true    0          <none>
+spendwise-frontend-968d984cc-v2vtv   true    0          <none>
+spendwise-postgres-0                 true    0          <none>
+$ helm history spendwise -n spendwise
+REVISION	UPDATED                 	STATUS    	CHART          	APP VERSION	DESCRIPTION                                                                                                                     
+1       	Tue Oct 13 18:43:00 2026	superseded	spendwise-1.0.0	1.0.0      	Install complete                                                                                                                
+2       	Tue Oct 13 18:43:41 2026	failed    	spendwise-1.0.0	1.0.0      	Upgrade "spendwise" failed: resource Deployment/spendwise/spendwise-backend not ready. status: InProgress, message: Updated: ...
+3       	Tue Oct 13 18:53:11 2026	deployed  	spendwise-1.0.0	1.0.0      	Upgrade complete                                                                                                                

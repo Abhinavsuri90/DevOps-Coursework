@@ -1,0 +1,4 @@
+# Injected fault 1: typo in the backend image tag ("locla" instead of "local").
+backend:
+  image:
+    tag: locla

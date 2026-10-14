@@ -1,0 +1,52 @@
+# Baseline: healthy release
+$ helm history spendwise -n spendwise --max 2
+REVISION	UPDATED                 	STATUS    	CHART          	APP VERSION	DESCRIPTION     
+3       	Tue Oct 13 18:53:11 2026	superseded	spendwise-1.0.0	1.0.0      	Upgrade complete
+4       	Tue Oct 13 18:58:52 2026	deployed  	spendwise-1.0.0	1.0.0      	Upgrade complete
+$ curl -s -H 'Host: spendwise.local' http://127.0.0.1:18080/api/summary | cut -c1-60
+{"total":"13309.00","count":140,"by_category":[{"category":"
+# INJECT fault 1: helm upgrade with troubleshooting/break-1-image-tag.yaml
+$ helm upgrade spendwise helm/spendwise -n spendwise -f helm/spendwise/values-local.yaml -f troubleshooting/break-1-image-tag.yaml | head -6
+Release "spendwise" has been upgraded. Happy Helming!
+NAME: spendwise
+LAST DEPLOYED: Tue Oct 13 19:06:38 2026
+NAMESPACE: spendwise
+STATUS: deployed
+REVISION: 5
+# IDENTIFY: a new backend Pod cannot start; the rollout is stuck (old Pods still serve, so the app is up)
+$ kubectl get pods -n spendwise -l app.kubernetes.io/name=backend
+NAME                                 READY   STATUS             RESTARTS   AGE
+spendwise-backend-75d9486d96-gppqg   1/1     Running            0          13m
+spendwise-backend-75d9486d96-vgg2b   1/1     Running            0          13m
+spendwise-backend-7d5c675b76-4zzvp   0/1     ImagePullBackOff   0          26s
+$ kubectl rollout status deploy/spendwise-backend -n spendwise --timeout=10s
+Waiting for deployment "spendwise-backend" rollout to finish: 1 out of 2 new replicas have been updated...
+error: timed out waiting for the condition
+# INVESTIGATE
+$ kubectl describe pod spendwise-backend-7d5c675b76-4zzvp -n spendwise | grep -E '^ +Image:|Failed to pull' | head -3 | cut -c1-200
+    Image:         postgres:17-alpine
+    Image:          spendwise-backend:locla
+  Warning  Failed     15s (x2 over 29s)  kubelet            spec.containers{api}: Failed to pull image "spendwise-backend:locla": failed to pull and unpack image "docker.io/library/spendwise-backend:l
+$ helm get values spendwise -n spendwise | grep -A2 'backend:'
+backend:
+  image:
+    repository: spendwise-backend
+# ROOT CAUSE: the image tag is spendwise-backend:locla (typo); no such image exists, so the pull fails
+# FIX: roll the release back to the last good revision
+$ helm rollback spendwise 4 -n spendwise --wait --timeout 5m
+Rollback was a success! Happy Helming!
+# VERIFY
+$ kubectl rollout status deploy/spendwise-backend -n spendwise --timeout=120s
+deployment "spendwise-backend" successfully rolled out
+$ kubectl get pods -n spendwise -l app.kubernetes.io/name=backend -o 'custom-columns=POD:.metadata.name,STATUS:.status.phase,IMAGE:.spec.containers[0].image'
+POD                                  STATUS    IMAGE
+spendwise-backend-75d9486d96-gppqg   Running   spendwise-backend:local
+spendwise-backend-75d9486d96-vgg2b   Running   spendwise-backend:local
+spendwise-backend-7d5c675b76-4zzvp   Pending   spendwise-backend:locla
+$ curl -s -H 'Host: spendwise.local' http://127.0.0.1:18080/api/summary | cut -c1-60
+{"total":"13414.00","count":147,"by_category":[{"category":"
+$ helm history spendwise -n spendwise --max 3
+REVISION	UPDATED                 	STATUS    	CHART          	APP VERSION	DESCRIPTION     
+4       	Tue Oct 13 18:58:52 2026	superseded	spendwise-1.0.0	1.0.0      	Upgrade complete
+5       	Tue Oct 13 19:06:38 2026	superseded	spendwise-1.0.0	1.0.0      	Upgrade complete
+6       	Tue Oct 13 19:07:14 2026	deployed  	spendwise-1.0.0	1.0.0      	Rollback to 4   

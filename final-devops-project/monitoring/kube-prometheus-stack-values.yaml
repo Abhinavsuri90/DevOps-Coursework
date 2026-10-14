@@ -1,0 +1,76 @@
+# kube-prometheus-stack values (Prometheus + Grafana + Alertmanager) for the SpendWise project on Minikube.
+# Install:
+#   kubectl create namespace monitoring
+#   kubectl -n monitoring create secret generic grafana-admin \
+#     --from-literal=admin-user=admin --from-literal=admin-password="$(openssl rand -hex 12)"
+#   helm upgrade --install kps prometheus-community/kube-prometheus-stack -n monitoring \
+#     -f kube-prometheus-stack-values.yaml --wait --timeout 15m
+
+# Minikube does not expose these control-plane endpoints for scraping.
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+defaultRules:
+  rules:
+    etcd: false
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+    kubeControllerManager: false
+    kubeProxy: false
+
+prometheus:
+  prometheusSpec:
+    retention: 12h
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+    # Pick up ServiceMonitors / PodMonitors / PrometheusRules from every namespace,
+    # not only the ones labelled with this Helm release.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 400Mi
+      limits:
+        memory: 900Mi
+
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+
+grafana:
+  # Admin login comes from a Secret created at install time; nothing is committed.
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  # Read-only anonymous access so dashboards can be captured locally for screenshots.
+  grafana.ini:
+    auth.anonymous:
+      enabled: true
+      org_role: Viewer
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 16Mi

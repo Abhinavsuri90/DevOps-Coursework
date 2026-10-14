@@ -8,7 +8,7 @@ import json, sys
 data = json.load(sys.stdin)
 if data.get("status") != "success":
     sys.exit(data.get("error", "query failed"))
-keep = ("pod", "status", "job", "path", "alertname", "deployment")
+keep = ("pod", "status", "job", "path", "route", "method", "category", "alertname", "deployment")
 for series in data["data"]["result"]:
     labels = " ".join(f"{k}={v}" for k, v in series["metric"].items() if k in keep) or "{}"
     print(labels, "=>", series["value"][1])

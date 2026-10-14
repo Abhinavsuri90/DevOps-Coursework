@@ -1,0 +1,99 @@
+# Real issue found while the demo traffic kept running: the HPA has scaled out to maxReplicas (5) and the Pods still run close to the 70% CPU target
+$ kubectl get hpa -n spendwise
+NAME                REFERENCE                      TARGETS        MINPODS   MAXPODS   REPLICAS   AGE
+spendwise-backend   Deployment/spendwise-backend   cpu: 66%/70%   2         5         5          113m
+$ kubectl describe hpa spendwise-backend -n spendwise | sed -n '/^Conditions:/,/^Events:/p' | grep -E 'ScalingActive|ScalingLimited' | cut -c1-150
+  ScalingActive   True    ValidMetricFound     the HPA was able to successfully calculate a replica count from cpu resource utilization (percentage of
+  ScalingLimited  True    TooManyReplicas      the desired replica count is more than the maximum replica count
+$ kubectl top pods -n spendwise -l app.kubernetes.io/name=backend
+NAME                                 CPU(cores)   MEMORY(bytes)   
+spendwise-backend-5fc88b77b8-6wvb6   35m          62Mi            
+spendwise-backend-5fc88b77b8-9pp6b   32m          63Mi            
+spendwise-backend-5fc88b77b8-cc2f6   31m          62Mi            
+spendwise-backend-5fc88b77b8-x5qjh   35m          63Mi            
+spendwise-backend-5fc88b77b8-zvb6r   34m          67Mi            
+# INVESTIGATE: where does the backend spend its time? (seconds of request handling per second, per route, last 5m)
+$ bash monitoring/prom.sh query 'sort_desc(sum by (route) (rate(spendwise_http_request_duration_seconds_sum[5m])))'
+route=/api/expenses => 0.08166196299460088
+route=/api/summary => 0.029424111523005822
+route=/health => 0.014355845178741632
+$ bash monitoring/prom.sh query 'sort_desc(sum by (route) (rate(spendwise_http_requests_total[5m])))'
+route=/api/expenses => 3.5543957899328906
+route=/api/summary => 1.6666719115836175
+route=/health => 1.3333370762006809
+$ curl -s -H 'Host: spendwise.local' http://127.0.0.1:18080/api/summary | python3 -c 'import json,sys; print("rows in the table:", json.load(sys.stdin)["count"])'
+rows in the table: 368
+$ curl -s -o /dev/null -w 'GET /api/expenses -> %{size_download} bytes in %{time_total}s\n' -H 'Host: spendwise.local' http://127.0.0.1:18080/api/expenses
+GET /api/expenses -> 38091 bytes in 0.026640s
+$ curl -s -H 'Host: spendwise.local' http://127.0.0.1:18080/api/expenses | python3 -c 'import json,sys; print("rows returned:", len(json.load(sys.stdin)))'
+rows returned: 368
+# ROOT CAUSE: GET /api/expenses returns EVERY row. The traffic generator adds rows all the time, so each list call gets bigger and
+# slower, CPU per request keeps rising, and the HPA scales out until it hits maxReplicas. More Pods only hide an O(n) endpoint.
+# FIX: bound the response with a limit query parameter (default 100, max 500), add a test, rebuild and roll out
+$ export PATH="/tmp/scratchpad/venv21/bin:$PATH"; (cd application/backend && pytest -q -p no:cacheprovider tests 2>&1 | tail -1)
+========================= 8 passed, 1 warning in 0.07s =========================
+$ docker build -q -f docker/backend.Dockerfile -t spendwise-backend:local .
+sha256:862710810b71d91c5883f6905723dfe48245d6446fbb0769dce3f4306558b000
+$ minikube image load spendwise-backend:local && minikube image ls | grep spendwise-backend
+docker.io/library/spendwise-backend:local
+$ kubectl rollout restart deployment/spendwise-backend -n spendwise
+deployment.apps/spendwise-backend restarted
+$ kubectl rollout status deployment/spendwise-backend -n spendwise --timeout=240s
+Waiting for deployment spec update to be observed...
+Waiting for deployment spec update to be observed...
+Waiting for deployment spec update to be observed...
+Waiting for deployment "spendwise-backend" rollout to finish: 0 out of 5 new replicas have been updated...
+Waiting for deployment "spendwise-backend" rollout to finish: 0 out of 5 new replicas have been updated...
+Waiting for deployment "spendwise-backend" rollout to finish: 0 out of 5 new replicas have been updated...
+Waiting for deployment "spendwise-backend" rollout to finish: 0 out of 5 new replicas have been updated...
+Waiting for deployment "spendwise-backend" rollout to finish: 2 out of 5 new replicas have been updated...
+Waiting for deployment "spendwise-backend" rollout to finish: 3 out of 5 new replicas have been updated...
+Waiting for deployment "spendwise-backend" rollout to finish: 3 out of 5 new replicas have been updated...
+Waiting for deployment "spendwise-backend" rollout to finish: 3 out of 5 new replicas have been updated...
+Waiting for deployment "spendwise-backend" rollout to finish: 3 out of 5 new replicas have been updated...
+Waiting for deployment "spendwise-backend" rollout to finish: 3 out of 5 new replicas have been updated...
+Waiting for deployment "spendwise-backend" rollout to finish: 4 out of 5 new replicas have been updated...
+Waiting for deployment "spendwise-backend" rollout to finish: 4 out of 5 new replicas have been updated...
+Waiting for deployment "spendwise-backend" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "spendwise-backend" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "spendwise-backend" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "spendwise-backend" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "spendwise-backend" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "spendwise-backend" rollout to finish: 1 old replicas are pending termination...
+deployment "spendwise-backend" successfully rolled out
+# VERIFY: the list is bounded; bad limits are rejected; the summary still counts every row
+$ curl -s -H 'Host: spendwise.local' http://127.0.0.1:18080/api/expenses | python3 -c 'import json,sys; print("rows returned:", len(json.load(sys.stdin)))'
+rows returned: 100
+$ curl -s -o /dev/null -w 'GET /api/expenses -> %{size_download} bytes in %{time_total}s\n' -H 'Host: spendwise.local' http://127.0.0.1:18080/api/expenses
+GET /api/expenses -> 10401 bytes in 0.188624s
+$ curl -s -H 'Host: spendwise.local' 'http://127.0.0.1:18080/api/expenses?limit=3' | python3 -c 'import json,sys; [print(e["id"], e["spent_on"], e["title"]) for e in json.load(sys.stdin)]'
+384 2026-10-13 Chai #3980
+383 2026-10-13 Chai #3970
+382 2026-10-13 Chai #3960
+$ curl -s -o /dev/null -w 'GET /api/expenses?limit=501 -> HTTP %{http_code}\n' -H 'Host: spendwise.local' 'http://127.0.0.1:18080/api/expenses?limit=501'
+GET /api/expenses?limit=501 -> HTTP 422
+$ curl -s -H 'Host: spendwise.local' http://127.0.0.1:18080/api/summary | python3 -c 'import json,sys; print("rows in the table:", json.load(sys.stdin)["count"])'
+rows in the table: 384
+$ for i in 1 2 3 4 5; do curl -s -o /dev/null -w '%{size_download} bytes in %{time_total}s\n' -H 'Host: spendwise.local' http://127.0.0.1:18080/api/expenses; done
+10401 bytes in 0.061597s
+10401 bytes in 0.034377s
+10401 bytes in 0.012689s
+10401 bytes in 0.015550s
+10401 bytes in 0.008427s
+# The HPA scales back in once CPU stays under target for its 5-minute scale-down stabilisation window
+$ SECONDS=0; until [ "$(kubectl get hpa spendwise-backend -n spendwise -o jsonpath='{.status.currentReplicas}')" -lt 5 ]; do sleep 15; done; echo "scale-in started after ${SECONDS}s"
+scale-in started after 302s
+$ SECONDS=0; until [ "$(kubectl get hpa spendwise-backend -n spendwise -o jsonpath='{.status.desiredReplicas}')" = "$(kubectl get deploy spendwise-backend -n spendwise -o jsonpath='{.status.readyReplicas}')" ] && [ $SECONDS -gt 240 ]; do sleep 15; done; kubectl get hpa -n spendwise
+NAME                REFERENCE                      TARGETS        MINPODS   MAXPODS   REPLICAS   AGE
+spendwise-backend   Deployment/spendwise-backend   cpu: 37%/70%   2         5         4          124m
+$ kubectl top pods -n spendwise -l app.kubernetes.io/name=backend
+NAME                                 CPU(cores)   MEMORY(bytes)   
+spendwise-backend-58c8f99665-clt56   17m          63Mi            
+spendwise-backend-58c8f99665-jtk4n   18m          63Mi            
+spendwise-backend-58c8f99665-l4hj5   19m          62Mi            
+spendwise-backend-58c8f99665-nlrr2   20m          63Mi            
+$ bash monitoring/prom.sh query 'sort_desc(sum by (route) (rate(spendwise_http_request_duration_seconds_sum[5m])))'
+route=/api/expenses => 0.03675518807695661
+route=/api/summary => 0.01859794956607685
+route=/health => 0.009501821103289714
+# RESULT (from the numbers above): /api/expenses handling time 0.082 -> 0.037 s/s, response 38 KB -> 10 KB, backend CPU about 167m (5 Pods) -> about 74m (4 Pods); the HPA is below target and scaling in

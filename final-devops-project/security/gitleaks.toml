@@ -1,0 +1,14 @@
+# Secret scanning: Gitleaks' built-in rules plus project allowlists.
+title = "SpendWise secret scanning"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Generated files, recorded transcripts and screenshots are not source code"
+paths = [
+  '''evidence/''',
+  '''screenshots/''',
+  '''package-lock\.json''',
+  '''kubernetes/spendwise-rendered\.yaml''',
+]

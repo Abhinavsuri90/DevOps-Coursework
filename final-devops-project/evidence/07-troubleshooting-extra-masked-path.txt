@@ -1,0 +1,43 @@
+# NOTE (added after the run): this injected fault was MASKED. The frontend's nginx also proxies /api/ to the
+# backend, so requests misrouted to the frontend still reached the API (one extra hop). Kept as a real finding;
+# the 'IDENTIFY' expectations below did not happen - the API answered with JSON and 201.
+# The overlay used here was later renamed to troubleshooting/extra-masked-ingress-path.yaml.
+# INJECT fault 2: helm upgrade with troubleshooting/break-2-ingress-path.yaml
+$ helm upgrade spendwise helm/spendwise -n spendwise -f helm/spendwise/values-local.yaml -f troubleshooting/break-2-ingress-path.yaml --wait --timeout 5m | head -6
+Release "spendwise" has been upgraded. Happy Helming!
+NAME: spendwise
+LAST DEPLOYED: Tue Oct 13 19:07:34 2026
+NAMESPACE: spendwise
+STATUS: deployed
+REVISION: 7
+# IDENTIFY: the page loads, but the API answers with HTML (GET) or 405 (POST) instead of JSON
+$ curl -s -H 'Host: spendwise.local' http://127.0.0.1:18080/api/summary | head -c 80; echo
+{"total":"13474.00","count":151,"by_category":[{"category":"rent","total":"9000.
+$ curl -s -o /dev/null -w 'POST /api/expenses -> HTTP %{http_code}\n' -X POST -H 'Host: spendwise.local' -H 'Content-Type: application/json' -d '{"title":"x","amount":"1","category":"other","spent_on":"2026-10-13"}' http://127.0.0.1:18080/api/expenses
+POST /api/expenses -> HTTP 201
+# INVESTIGATE: which backend does each path go to?
+$ kubectl describe ingress spendwise -n spendwise | sed -n '/^Rules:/,/^Annotations:/p'
+Rules:
+  Host             Path  Backends
+  ----             ----  --------
+  spendwise.local  
+                   /apis   spendwise-backend:http (10.244.0.207:8000,10.244.0.208:8000)
+                   /       spendwise-frontend:http (10.244.0.201:8080,10.244.0.202:8080)
+Annotations:       meta.helm.sh/release-name: spendwise
+# ROOT CAUSE: the API rule is /apis, so /api/... falls through to '/' (the frontend). nginx returns index.html for GET and 405 for POST
+# FIX: deploy the correct values (apiPath /api)
+$ helm upgrade spendwise helm/spendwise -n spendwise -f helm/spendwise/values-local.yaml --wait --timeout 5m | head -6
+Release "spendwise" has been upgraded. Happy Helming!
+NAME: spendwise
+LAST DEPLOYED: Tue Oct 13 19:07:42 2026
+NAMESPACE: spendwise
+STATUS: deployed
+REVISION: 8
+# VERIFY
+$ kubectl describe ingress spendwise -n spendwise | sed -n '/^Rules:/,/^Annotations:/p' | grep -E '/api|/ '
+                   /api   spendwise-backend:http (10.244.0.207:8000,10.244.0.208:8000)
+                   /      spendwise-frontend:http (10.244.0.201:8080,10.244.0.202:8080)
+$ curl -s -H 'Host: spendwise.local' http://127.0.0.1:18080/api/summary | cut -c1-60
+{"total":"13505.00","count":154,"by_category":[{"category":"
+$ curl -s -o /dev/null -w 'POST /api/expenses -> HTTP %{http_code}\n' -X POST -H 'Host: spendwise.local' -H 'Content-Type: application/json' -d '{"title":"Ingress fixed","amount":"1.00","category":"other","spent_on":"2026-10-13"}' http://127.0.0.1:18080/api/expenses
+POST /api/expenses -> HTTP 201

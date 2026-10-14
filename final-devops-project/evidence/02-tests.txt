@@ -1,0 +1,38 @@
+# M2 Testing: pytest against a throwaway SQLite database (tests/conftest.py overrides get_db), plus ruff
+$ ruff check .
+All checks passed!
+$ pytest -v --cov=app --cov-report=term-missing -p no:cacheprovider 2>&1 | grep -v -E 'DeprecationWarning|from starlette.testclient|^ *$|warnings summary|Docs: https'
+============================= test session starts ==============================
+platform darwin -- Python 3.13.3, pytest-9.1.1, pluggy-1.6.0 -- /tmp/scratchpad/venv21/bin/python3.13
+rootdir: /Users/abhinavsuri/Desktop/DevOps-Coursework/final-devops-project/application/backend
+configfile: pytest.ini
+testpaths: tests
+plugins: cov-7.1.0, anyio-4.15.1
+collecting ... collected 8 items
+
+tests/test_expenses.py::test_health PASSED                               [ 12%]
+tests/test_expenses.py::test_create_and_list_expenses PASSED             [ 25%]
+tests/test_expenses.py::test_filter_by_category PASSED                   [ 37%]
+tests/test_expenses.py::test_list_returns_newest_first_up_to_limit PASSED [ 50%]
+tests/test_expenses.py::test_get_update_and_delete PASSED                [ 62%]
+tests/test_expenses.py::test_summary_totals_by_category PASSED           [ 75%]
+tests/test_expenses.py::test_validation_rejects_bad_input PASSED         [ 87%]
+tests/test_expenses.py::test_metrics_endpoint PASSED                     [100%]
+
+../../../../../../../tmp/scratchpad/venv21/lib/python3.13/site-packages/fastapi/testclient.py:1
+
+================================ tests coverage ================================
+_______________ coverage: platform darwin, python 3.13.3-final-0 _______________
+
+Name              Stmts   Miss  Cover   Missing
+-----------------------------------------------
+app/__init__.py       0      0   100%
+app/config.py         4      0   100%
+app/db.py            13      4    69%   18-22
+app/main.py          59      0   100%
+app/metrics.py       17      0   100%
+app/models.py        14      0   100%
+app/schemas.py       22      0   100%
+-----------------------------------------------
+TOTAL               129      4    97%
+========================= 8 passed, 1 warning in 0.12s =========================

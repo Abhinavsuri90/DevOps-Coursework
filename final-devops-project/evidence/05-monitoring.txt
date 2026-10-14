@@ -1,0 +1,41 @@
+# M9 Observability: the backend exposes /metrics; Prometheus scrapes it through the chart's ServiceMonitor
+$ kubectl -n spendwise exec deploy/spendwise-frontend -- wget -qO- http://spendwise-backend:8000/metrics | grep -E '^spendwise_http_request_duration_seconds_(count|sum)|^spendwise_http_requests_total|^spendwise_expenses_created_total' | head -10
+spendwise_http_requests_total{method="GET",route="/health",status="200"} 23.0
+spendwise_http_requests_total{method="POST",route="/api/expenses",status="201"} 6.0
+spendwise_http_requests_total{method="GET",route="/api/expenses",status="200"} 25.0
+spendwise_http_requests_total{method="GET",route="/api/summary",status="200"} 7.0
+spendwise_http_request_duration_seconds_count{method="GET",route="/health"} 23.0
+spendwise_http_request_duration_seconds_sum{method="GET",route="/health"} 0.35443341699647135
+spendwise_http_request_duration_seconds_count{method="POST",route="/api/expenses"} 6.0
+spendwise_http_request_duration_seconds_sum{method="POST",route="/api/expenses"} 0.05895333499938715
+spendwise_http_request_duration_seconds_count{method="GET",route="/api/expenses"} 25.0
+spendwise_http_request_duration_seconds_sum{method="GET",route="/api/expenses"} 0.14275729399741977
+$ kubectl get servicemonitor,prometheusrule -n spendwise
+NAME                                                     AGE
+servicemonitor.monitoring.coreos.com/spendwise-backend   11m
+
+NAME                                                    AGE
+prometheusrule.monitoring.coreos.com/spendwise-alerts   11m
+$ curl -s 'http://localhost:9090/api/v1/targets?state=active' | python3 -c 'import json,sys; [print(t["labels"]["job"], t["labels"]["pod"], t["scrapeUrl"], "health="+t["health"]) for t in json.load(sys.stdin)["data"]["activeTargets"] if t["labels"].get("namespace")=="spendwise"]'
+spendwise-backend spendwise-backend-75d9486d96-vgg2b http://10.244.0.208:8000/metrics health=up
+spendwise-backend spendwise-backend-75d9486d96-gppqg http://10.244.0.207:8000/metrics health=up
+$ bash session20-monitoring-observability-gitops/01-monitoring/promql.sh 'histogram_quantile(0.95, sum by (le) (rate(spendwise_http_request_duration_seconds_bucket[5m])))'
+{} => 0.047406037313933044
+$ bash session20-monitoring-observability-gitops/01-monitoring/promql.sh 'sum(spendwise_expenses_created_total)'
+{} => 5
+$ curl -s http://localhost:9090/api/v1/rules | python3 -c 'import json,sys; [print(r["name"], "health="+r["health"], "state="+r["state"]) for g in json.load(sys.stdin)["data"]["groups"] if g["name"]=="spendwise" for r in g["rules"]]'
+SpendWiseHighErrorRate health=ok state=inactive
+SpendWiseBackendDown health=ok state=inactive
+SpendWiseSlowRequests health=ok state=inactive
+$ curl -s 'http://localhost:3000/api/search?query=SpendWise' | python3 -c 'import json,sys; [print("grafana dashboard:", d["title"], "uid="+d["uid"]) for d in json.load(sys.stdin)]'
+grafana dashboard: SpendWise - Application Overview uid=spendwise
+$ bash session20-monitoring-observability-gitops/01-monitoring/promql.sh 'sum by (route) (rate(spendwise_http_requests_total[2m]))'
+route=/health => 0.46380763884250575
+route=/api/summary => 0.17210987903972502
+route=/api/expenses => 0.30897583102458875
+$ bash session20-monitoring-observability-gitops/01-monitoring/promql.sh 'sum by (category) (spendwise_expenses_created_total)'
+category=books => 1
+category=rent => 1
+category=food => 3
+category=travel => 1
+category=fun => 1

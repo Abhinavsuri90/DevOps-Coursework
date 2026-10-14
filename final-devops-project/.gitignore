@@ -1,0 +1,19 @@
+# Local secrets and generated files
+.env
+docker/.env
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfvars
+!*.tfvars.example
+node_modules/
+dist/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.venv/
+.coverage
+coverage.xml
+junit.xml
+*.sarif
+*.tar.gz

@@ -1,0 +1,8 @@
+# Injected fault 5: the backend has no CPU request or limit (if only the request were removed,
+# Kubernetes would default it to the limit), so the HPA cannot compute CPU utilisation.
+backend:
+  resources:
+    requests:
+      cpu: null
+    limits:
+      cpu: null

@@ -1,0 +1,39 @@
+# Small Argo CD install for Minikube (same settings as Session 20).
+# helm upgrade --install argocd argo/argo-cd -n argocd --create-namespace -f gitops/argocd-values.yaml --wait
+dex:
+  enabled: false
+notifications:
+  enabled: false
+applicationSet:
+  enabled: false
+configs:
+  params:
+    # Plain HTTP inside the cluster; the UI is reached with kubectl port-forward.
+    server.insecure: true
+  cm:
+    # Poll Git every 60s instead of 180s so changes show up quickly in the demo.
+    timeout.reconciliation: 60s
+    # Read-only anonymous access, used only to capture UI screenshots locally.
+    users.anonymous.enabled: "true"
+  rbac:
+    policy.default: role:readonly
+controller:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 192Mi
+repoServer:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+server:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+redis:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi

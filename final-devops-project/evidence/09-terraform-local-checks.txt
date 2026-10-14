@@ -1,0 +1,25 @@
+# M7 Terraform (VPC + 2 public subnets + EKS + node group): checks that run without AWS credentials
+$ terraform init -input=false -no-color 2>&1 | grep -E 'Initializing|Installing|Installed|Reusing|successfully'
+Initializing the backend...
+Initializing provider plugins...
+- Reusing previous version of hashicorp/aws from the dependency lock file
+Terraform has been successfully initialized!
+$ terraform fmt -check -diff && echo 'fmt: all files already formatted'
+fmt: all files already formatted
+$ terraform validate -no-color
+Success! The configuration is valid.
+
+# Resources and the order Terraform will create them in (dependency graph)
+$ terraform graph | grep -- '->' | sed -E 's/^ *"([^"]+)" -> "([^"]+)";$/\1  depends on  \2/' | sort
+aws_eks_cluster.main  depends on  aws_iam_role_policy_attachment.cluster
+aws_eks_cluster.main  depends on  aws_subnet.public
+aws_eks_node_group.default  depends on  aws_eks_cluster.main
+aws_eks_node_group.default  depends on  aws_iam_role_policy_attachment.node
+aws_iam_role_policy_attachment.cluster  depends on  aws_iam_role.cluster
+aws_iam_role_policy_attachment.node  depends on  aws_iam_role.node
+aws_internet_gateway.main  depends on  aws_vpc.main
+aws_route_table.public  depends on  aws_internet_gateway.main
+aws_route_table_association.public  depends on  aws_route_table.public
+aws_route_table_association.public  depends on  aws_subnet.public
+aws_subnet.public  depends on  aws_vpc.main
+aws_subnet.public  depends on  data.aws_availability_zones.available
