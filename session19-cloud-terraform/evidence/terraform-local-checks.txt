@@ -1,0 +1,32 @@
+# Session 19 terraform-project: steps that run without AWS credentials (Terraform v1.16.5, AWS provider 6.68)
+$ terraform init -input=false -no-color 2>&1 | grep -E 'Initializing|Installing|Installed|Reusing|successfully'
+Initializing the backend...
+Initializing provider plugins...
+- Reusing previous version of hashicorp/aws from the dependency lock file
+Terraform has been successfully initialized!
+$ terraform fmt -check -diff && echo 'fmt: all files already formatted'
+fmt: all files already formatted
+$ terraform validate -no-color
+Success! The configuration is valid.
+
+# Dependency graph: implicit dependencies (references) plus the explicit depends_on on the EC2 instance
+$ terraform graph | grep -- '->' | sed -E 's/^ *"([^"]+)" -> "([^"]+)";$/\1  depends on  \2/' | sort
+aws_instance.web  depends on  aws_route_table_association.public
+aws_instance.web  depends on  aws_s3_bucket.assets
+aws_instance.web  depends on  aws_security_group.web
+aws_instance.web  depends on  data.aws_ssm_parameter.al2023
+aws_internet_gateway.main  depends on  aws_vpc.main
+aws_route_table.public  depends on  aws_internet_gateway.main
+aws_route_table_association.public  depends on  aws_route_table.public
+aws_route_table_association.public  depends on  aws_subnet.public
+aws_s3_bucket.assets  depends on  data.aws_caller_identity.current
+aws_s3_bucket_public_access_block.assets  depends on  aws_s3_bucket.assets
+aws_s3_bucket_server_side_encryption_configuration.assets  depends on  aws_s3_bucket.assets
+aws_s3_bucket_versioning.assets  depends on  aws_s3_bucket.assets
+aws_s3_object.architecture  depends on  aws_instance.web
+aws_security_group.web  depends on  aws_vpc.main
+aws_subnet.public  depends on  aws_vpc.main
+aws_subnet.public  depends on  data.aws_availability_zones.available
+aws_vpc_security_group_egress_rule.all  depends on  aws_security_group.web
+aws_vpc_security_group_ingress_rule.http  depends on  aws_security_group.web
+aws_vpc_security_group_ingress_rule.ssh  depends on  aws_security_group.web

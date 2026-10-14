@@ -1,0 +1,5 @@
+# Copy to terraform.tfvars to override defaults. No credentials here.
+aws_region         = "ap-south-1"
+project            = "abhinav-s19"
+instance_type      = "t3.micro"
+ssh_allowed_cidrs  = [] # e.g. ["203.0.113.10/32"] to allow SSH from your IP only
