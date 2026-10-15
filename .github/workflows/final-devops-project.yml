@@ -181,7 +181,7 @@ jobs:
           python = [r for r in report.get("Results", []) if r.get("Type") == "python-pkg"]
           if python:
               found = sum(len(r.get("Vulnerabilities") or []) for r in python)
-              parts.append(f"{len(python)} Python packages: {found} fixable HIGH/CRITICAL")
+              parts.append(f"Python packages (python-pkg): {found} fixable HIGH/CRITICAL")
           print("::notice title=Trivy image scan - ${{ matrix.component }}::" + " | ".join(parts))
           PY
       - uses: actions/upload-artifact@v7
