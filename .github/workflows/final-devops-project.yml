@@ -159,8 +159,31 @@ jobs:
       - name: Trivy image scan (fails on fixable HIGH/CRITICAL)
         working-directory: final-devops-project
         run: |
-          docker run --rm -v "$PWD:/src" -w /src "$TRIVY_IMAGE" image \
+          docker run --rm -v "$PWD:/src" -v trivy-cache:/root/.cache/trivy -w /src "$TRIVY_IMAGE" image \
             --config security/trivy.yaml --input image-${{ matrix.component }}.tar.gz --format table
+      - name: Publish the Trivy result (visible on the run page without signing in)
+        if: always()
+        working-directory: final-devops-project
+        run: |
+          docker run --rm -v "$PWD:/src" -v trivy-cache:/root/.cache/trivy -w /src "$TRIVY_IMAGE" image \
+            --config security/trivy.yaml --exit-code 0 \
+            --input image-${{ matrix.component }}.tar.gz --format json --output trivy-${{ matrix.component }}.json
+          python3 - trivy-${{ matrix.component }}.json <<'PY'
+          import json, sys
+          report = json.load(open(sys.argv[1]))
+          parts = []
+          for result in report.get("Results", []):
+              vulns = result.get("Vulnerabilities") or []
+              high = sum(v["Severity"] == "HIGH" for v in vulns)
+              critical = sum(v["Severity"] == "CRITICAL" for v in vulns)
+              if result.get("Class") == "os-pkgs" or vulns:
+                  parts.append(f"{result['Target']} ({result.get('Type')}): {critical} CRITICAL, {high} HIGH")
+          python = [r for r in report.get("Results", []) if r.get("Type") == "python-pkg"]
+          if python:
+              found = sum(len(r.get("Vulnerabilities") or []) for r in python)
+              parts.append(f"{len(python)} Python packages: {found} fixable HIGH/CRITICAL")
+          print("::notice title=Trivy image scan - ${{ matrix.component }}::" + " | ".join(parts))
+          PY
       - uses: actions/upload-artifact@v7
         with:
           name: image-${{ matrix.component }}
