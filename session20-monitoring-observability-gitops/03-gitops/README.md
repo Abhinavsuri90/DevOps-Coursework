@@ -73,6 +73,46 @@ Argo CD's main components are the **repo-server** (clones Git and renders manife
 
 | File | Purpose |
 | --- | --- |
-| [argocd-values.yaml](argocd-values.yaml) | Small Argo CD install: no Dex/notifications/ApplicationSet, 60 s Git polling, read-only anonymous UI for local screenshots |
+| [argocd-values.yaml](argocd-values.yaml) | Small Argo CD install: no Dex or notifications, ApplicationSet controller at 0 replicas, 60 s Git polling, read-only anonymous UI for local screenshots |
 | [argocd-application.yaml](argocd-application.yaml) | `Application` gitops-demo → this repo, path `session20-monitoring-observability-gitops/03-gitops/app`, automated sync with prune and self-heal |
 | [app/](app/) | The desired state that Argo CD syncs |
+
+## Live demo
+
+Argo CD v3.5.5 was installed on Minikube with [argocd-values.yaml](argocd-values.yaml) (Helm chart `argo/argo-cd` 10.10.3) and pointed at this repository. Every step below was recorded: transcripts are in [evidence/](evidence/), terminal screenshots are renders of them, and the Argo CD UI images are real browser captures.
+
+| Step | What I did | What Argo CD did | Time |
+| --- | --- | --- | --- |
+| 1. Initial sync | `kubectl apply -f argocd-application.yaml` | Cloned `main`, created the namespace, ConfigMap, Deployment (2 replicas) and Service. **Synced + Healthy** | 32 s |
+| 2. Change through Git | Commit [`55a46e8`](https://github.com/Abhinavsuri90/DevOps-Coursework/commit/55a46e8): `replicas: 2 → 3`, page `version 1 → version 2`. **No kubectl** | Detected the new commit, applied it: 3/3 Pods, page served "GitOps demo - version 2" | 77 s |
+| 3. Self-heal | `kubectl scale deployment gitops-web --replicas=1` (manual drift) | Saw the drift, status *OutOfSync*, and reset `replicas` to 3, because Git is the truth | 2 s |
+| 4. Prune, add | Commit [`1482441`](https://github.com/Abhinavsuri90/DevOps-Coursework/commit/1482441) adds `app/feature-flags.yaml` | Created ConfigMap `feature-flags` | 130 s |
+| 5. Prune, delete | Commit [`92df06a`](https://github.com/Abhinavsuri90/DevOps-Coursework/commit/92df06a) deletes the file | **Deleted** the ConfigMap from the cluster (`prune: true`) | 65 s |
+
+The waits of about 1–2 minutes come from polling: Argo CD checks Git every 60 s (`timeout.reconciliation`). A GitHub webhook would make syncs almost instant.
+
+**Argo CD UI after the demo:** the app is Healthy and Synced to `main (92df06a)` with auto-sync enabled, and the tree shows Namespace, ConfigMap, Service and Deployment → ReplicaSet → 3 Pods.
+
+![Argo CD application tree](screenshots/01-argocd-gitops-demo-tree.png)
+
+![Argo CD applications list](screenshots/02-argocd-applications.png)
+
+**1. Install and first sync:**
+
+![Install Argo CD and first sync](screenshots/03-install-and-first-sync.png)
+
+**2. A Git commit changes the cluster:**
+
+![Git change rolled out by Argo CD](screenshots/04-git-change-synced.png)
+
+**3. Self-heal:**
+
+![Manual drift reverted](screenshots/05-self-heal.png)
+
+**4–5. Prune:**
+
+![Resource removed from Git is pruned](screenshots/06-prune.png)
+
+**Issue found during the install:** chart 10.x has no `applicationSet.enabled` switch, so the ApplicationSet controller kept running even though the values file "disabled" it. The fix is `applicationSet.replicas: 0`. Before and after are recorded in [evidence/01-argocd-install-sync.txt](evidence/01-argocd-install-sync.txt).
+
+**Capturing the UI:** Argo CD keeps an event stream open, so the usual headless-Chrome capture (virtual time budget) never finished. [scripts/capture-spa.mjs](../../scripts/capture-spa.mjs) drives Chrome over the DevTools protocol instead: it loads the page, waits in real time, then takes the screenshot.
