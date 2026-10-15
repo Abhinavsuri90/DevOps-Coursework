@@ -7,7 +7,9 @@ metadata:
     {{- include "spendwise.labels" . | nindent 4 }}
   annotations:
     helm.sh/hook: test
-    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+    # Keep the Pod after it succeeds so `helm test --logs` can read its logs (the Helm on CI runners
+    # failed with hook-succeeded: the Pod was gone before the logs were fetched). Replaced on the next run.
+    helm.sh/hook-delete-policy: before-hook-creation
 spec:
   restartPolicy: Never
   containers:
