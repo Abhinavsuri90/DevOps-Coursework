@@ -1,25 +1,31 @@
 # M2 Testing: pytest against a throwaway SQLite database (tests/conftest.py overrides get_db), plus ruff
 $ ruff check .
 All checks passed!
-$ pytest -v --cov=app --cov-report=term-missing -p no:cacheprovider 2>&1 | grep -v -E 'DeprecationWarning|from starlette.testclient|^ *$|warnings summary|Docs: https'
+$ pytest -v --cov=app --cov-report=term-missing -p no:cacheprovider 2>&1 | grep -v -E 'DeprecationWarning|from starlette.testclient|^ *$|warnings summary|Docs: https|site-packages/fastapi/testclient.py' | sed -E 's# -- /.*/bin/python3.13##'
 ============================= test session starts ==============================
-platform darwin -- Python 3.13.3, pytest-9.1.1, pluggy-1.6.0 -- /tmp/scratchpad/venv21/bin/python3.13
+platform darwin -- Python 3.13.3, pytest-9.1.1, pluggy-1.6.0
 rootdir: /Users/abhinavsuri/Desktop/DevOps-Coursework/final-devops-project/application/backend
 configfile: pytest.ini
 testpaths: tests
 plugins: cov-7.1.0, anyio-4.15.1
-collecting ... collected 8 items
+collecting ... collected 9 items
 
-tests/test_expenses.py::test_health PASSED                               [ 12%]
-tests/test_expenses.py::test_create_and_list_expenses PASSED             [ 25%]
-tests/test_expenses.py::test_filter_by_category PASSED                   [ 37%]
-tests/test_expenses.py::test_list_returns_newest_first_up_to_limit PASSED [ 50%]
-tests/test_expenses.py::test_get_update_and_delete PASSED                [ 62%]
-tests/test_expenses.py::test_summary_totals_by_category PASSED           [ 75%]
-tests/test_expenses.py::test_validation_rejects_bad_input PASSED         [ 87%]
+tests/test_expenses.py::test_health PASSED                               [ 11%]
+tests/test_expenses.py::test_version PASSED                              [ 22%]
+tests/test_expenses.py::test_create_and_list_expenses PASSED             [ 33%]
+tests/test_expenses.py::test_filter_by_category PASSED                   [ 44%]
+tests/test_expenses.py::test_list_returns_newest_first_up_to_limit PASSED [ 55%]
+tests/test_expenses.py::test_get_update_and_delete PASSED                [ 66%]
+tests/test_expenses.py::test_summary_totals_by_category PASSED           [ 77%]
+tests/test_expenses.py::test_validation_rejects_bad_input PASSED         [ 88%]
 tests/test_expenses.py::test_metrics_endpoint PASSED                     [100%]
 
-../../../../../../../tmp/scratchpad/venv21/lib/python3.13/site-packages/fastapi/testclient.py:1
+
+tests/test_expenses.py::test_create_and_list_expenses
+  /tmp/scratchpad/venv21/lib/python3.13/site-packages/fastapi/routing.py:416: ResourceWarning: unclosed database in <sqlite3.Connection object at 0x10b424c70>
+    async def app(request: Request) -> Response:
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
 
 ================================ tests coverage ================================
 _______________ coverage: platform darwin, python 3.13.3-final-0 _______________
@@ -29,10 +35,10 @@ Name              Stmts   Miss  Cover   Missing
 app/__init__.py       0      0   100%
 app/config.py         4      0   100%
 app/db.py            13      4    69%   18-22
-app/main.py          59      0   100%
+app/main.py          62      0   100%
 app/metrics.py       17      0   100%
 app/models.py        14      0   100%
 app/schemas.py       22      0   100%
 -----------------------------------------------
-TOTAL               129      4    97%
-========================= 8 passed, 1 warning in 0.12s =========================
+TOTAL               132      4    97%
+======================== 9 passed, 2 warnings in 0.37s =========================

@@ -41,15 +41,15 @@ Everything below was actually run:
 | Module | What is required | Where it is |
 | --- | --- | --- |
 | M1 Application | FastAPI `/health`, ≥ 4 REST endpoints (GET/POST/PUT/DELETE), PostgreSQL table managed by Alembic, React UI | [application/backend/app/main.py](application/backend/app/main.py), [alembic/versions/0001_create_expenses.py](application/backend/alembic/versions/0001_create_expenses.py), [application/frontend/src/App.jsx](application/frontend/src/App.jsx) · [screenshot](screenshots/browser-01-compose-app.png) |
-| M2 Testing | pytest passes, ≥ 5 tests over ≥ 3 endpoints, test DB, `pytest.ini` / `conftest.py` | [tests/test_expenses.py](application/backend/tests/test_expenses.py) (8 tests, 97% coverage), [tests/conftest.py](application/backend/tests/conftest.py) (SQLite test DB), [pytest.ini](application/backend/pytest.ini) · [screenshot](screenshots/02-tests.png) |
-| M3 Git & GitHub | Public repo, meaningful commits, `.gitignore` | [github.com/Abhinavsuri90/DevOps-Coursework](https://github.com/Abhinavsuri90/DevOps-Coursework), [.gitignore](.gitignore) (`.env`, `__pycache__/`, `node_modules/`, `.venv/`, state files) |
+| M2 Testing | pytest passes, ≥ 5 tests over ≥ 3 endpoints, test DB, `pytest.ini` / `conftest.py` | [tests/test_expenses.py](application/backend/tests/test_expenses.py) (9 tests, 97% coverage), [tests/conftest.py](application/backend/tests/conftest.py) (SQLite test DB), [pytest.ini](application/backend/pytest.ini) · [screenshot](screenshots/02-tests.png) |
+| M3 Git & GitHub | Public repo, meaningful commits, `.gitignore` | [github.com/Abhinavsuri90/DevOps-Coursework](https://github.com/Abhinavsuri90/DevOps-Coursework), [.gitignore](.gitignore) (`.env`, `__pycache__/`, `node_modules/`, `.venv/`, state files) · [commit history](screenshots/browser-13-github-commits.png) |
 | M4 Docker | Backend Dockerfile, multi-stage frontend Dockerfile, non-root, `docker compose up --build` | [docker/backend.Dockerfile](docker/backend.Dockerfile), [docker/frontend.Dockerfile](docker/frontend.Dockerfile), [docker/docker-compose.yml](docker/docker-compose.yml) · [screenshot](screenshots/01-docker-compose.png) |
-| M5 CI/CD | Workflow on push to `main`, pytest gate, frontend build, both images built, pushed to GHCR with SHA tags | [.github/workflows/final-devops-project.yml](../.github/workflows/final-devops-project.yml) (copy in [.github/workflows/](.github/workflows/)) · [CI/CD pipeline](#cicd-pipeline) |
-| M6 DevSecOps | Trivy on both images, fails on HIGH/CRITICAL, explanation | `build-images` job + [security/trivy.yaml](security/trivy.yaml) · [DevSecOps](#devsecops-implementation) |
+| M5 CI/CD | Workflow on push to `main`, pytest gate, frontend build, both images built, pushed to GHCR with SHA tags | [.github/workflows/final-devops-project.yml](../.github/workflows/final-devops-project.yml) (copy in [.github/workflows/](.github/workflows/)) · [green run](screenshots/browser-11-github-actions-run.png) · [GHCR SHA tags](screenshots/browser-12-ghcr-tags.png) |
+| M6 DevSecOps | Trivy on both images, fails on HIGH/CRITICAL, explanation | `build-images` job + [security/trivy.yaml](security/trivy.yaml) · [Trivy results from CI](screenshots/browser-15-github-trivy-annotations.png) · [explanation](#devsecops-implementation) |
 | M7 Terraform | VPC with 2 public subnets, EKS with a node group, plan/apply/destroy, `tfvars.example` | [terraform/](terraform/) · [Terraform infrastructure](#terraform-infrastructure) |
 | M8 Kubernetes + Helm | Namespace, chart, 2+ replicas each, ClusterIP Services, Ingress `/` → frontend and `/api` → backend | [kubernetes/namespace.yaml](kubernetes/namespace.yaml), [helm/spendwise/](helm/spendwise/) · [screenshots](#kubernetes-deployment) |
 | M9 Observability | `/metrics`, Prometheus scraping, Grafana panels with live data | [monitoring/](monitoring/), ServiceMonitor/rules/dashboard in the chart · [Monitoring](#monitoring) |
-| M10 Docs + demo | This README; commit → pipeline → deployment update | this file · [GitOps](#gitops) |
+| M10 Docs + demo | This README; commit → pipeline → deployment update | this file · [recorded live demo](#live-demo-m10-commit--pipeline--deployment-update-recorded) |
 
 ## Project overview
 
@@ -57,6 +57,7 @@ Everything below was actually run:
 | --- | --- | --- |
 | GET | `/health` | Liveness/readiness: runs `SELECT 1` against the database and returns the app version |
 | GET | `/metrics` | Prometheus metrics (request counts, latency histograms, expenses created per category) |
+| GET | `/api/version` | The running build (`APP_VERSION` = the commit SHA in CI and GitOps), shown in the UI footer |
 | GET | `/api/expenses?category=&limit=` | Newest expenses first, optionally filtered by category. `limit` defaults to 100, max 500 |
 | POST | `/api/expenses` | Create an expense (`title`, `amount` > 0, `category` from a fixed list, `spent_on`, optional `notes`) |
 | GET | `/api/expenses/{id}` | One expense, or 404 |
@@ -64,7 +65,7 @@ Everything below was actually run:
 | DELETE | `/api/expenses/{id}` | Delete an expense (204) |
 | GET | `/api/summary` | Total, count, and totals per category (computed in SQL) |
 
-The React UI shows three summary cards (total, number of expenses, top category), an "add expense" form, a category filter, and the expense table with delete buttons. API calls are relative (`/api/...`), so the same build works behind Docker Compose (the nginx proxy) and behind the Kubernetes Ingress.
+The React UI shows three summary cards (total, number of expenses, top category), an "add expense" form, a category filter, and the expense table with delete buttons. The footer shows the running version (the commit SHA), so every deployment is visible in the browser. API calls are relative (`/api/...`), so the same build works behind Docker Compose (the nginx proxy) and behind the Kubernetes Ingress.
 
 The DevOps flow follows the assignment:
 
@@ -183,16 +184,16 @@ npm ci && npm run dev                     # http://localhost:5173
 ruff check . && pytest -v --cov=app --cov-report=term-missing
 ```
 
-The 8 tests cover:
+The 9 tests cover:
 
-- `/health`
+- `/health` and `/api/version`
 - create and list, the category filter, and the `limit` bound with newest-first ordering
 - get, update and delete, including 404s
 - `/api/summary` totals
 - validation errors (422)
 - `/metrics`
 
-![ruff and pytest: 8 passed, 97% coverage](screenshots/02-tests.png)
+![ruff and pytest: 9 passed, 97% coverage](screenshots/02-tests.png)
 
 ## Docker setup
 
@@ -237,7 +238,7 @@ The cluster is Minikube (Kubernetes v1.37, containerd, 4 CPUs) with the `ingress
 | ConfigMap | `spendwise-config` | Non-secret settings: `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, plus `BACKEND_HOST`/`BACKEND_PORT` for the frontend's nginx proxy |
 | Secret | `spendwise-db` | Database password, created at deploy time by [create-db-secret.sh](kubernetes/create-db-secret.sh) with `openssl rand`. Never stored in Git. `DATABASE_URL` is assembled in the Pod from env vars, using the password from `secretKeyRef` |
 | Ingress | `spendwise` (class `nginx`) | Host `spendwise.local`: `/api` → backend, `/` → frontend |
-| HorizontalPodAutoscaler | `spendwise-backend` | 2–5 replicas at 70% CPU (needs CPU requests, see fault 5) |
+| HorizontalPodAutoscaler | `spendwise-backend` | 2–5 replicas at 70% CPU (3 at most in the Minikube values files). It needs CPU requests, see fault 5 |
 | PodDisruptionBudget | backend and frontend | `minAvailable: 1` during node drains |
 | ServiceMonitor, PrometheusRule, dashboard ConfigMap | monitoring | See [Monitoring](#monitoring) |
 
@@ -268,8 +269,8 @@ The Ingress routes `/api` to the backend and `/` to the frontend (ingress-nginx 
 helm/spendwise/
 ├── Chart.yaml                 # spendwise 1.0.0
 ├── values.yaml                # defaults: GHCR images (tag must be set), 2 replicas, HPA 2–5 @ 70%, ingress, resources
-├── values-local.yaml          # Minikube: images spendwise-*:local, monitoring objects on
-├── values-gitops.yaml         # Argo CD: GHCR images; CI writes the commit SHA tag here
+├── values-local.yaml          # Minikube: images spendwise-*:local, monitoring objects on, HPA max 3
+├── values-gitops.yaml         # Argo CD: GHCR images (CI writes the commit SHA tag here), HPA max 3
 ├── files/grafana-dashboard.json
 └── templates/
     ├── _helpers.tpl  configmap.yaml  secret.yaml (only if no existingSecret)
@@ -372,20 +373,36 @@ flowchart LR
 | `backend-test` | Python 3.13: `ruff check`, `pytest --cov` (SQLite test DB). Uploads JUnit + coverage XML as an artifact | A lint error or any failing test |
 | `frontend-build` | Node 24: `npm ci`, `npm run build`, uploads `dist/` | The build fails |
 | `sast` / `sca` / `secret-scan` | Security stages, see [DevSecOps](#devsecops-implementation) | A finding above the threshold |
-| `build-images` (matrix: backend, frontend) | `docker build` with `APP_VERSION=<sha>`, **Trivy image scan**, saves the image as an artifact | The build fails or there is a fixable HIGH/CRITICAL CVE |
+| `build-images` (matrix: backend, frontend) | `docker build` with `APP_VERSION=<sha>`, **Trivy image scan**, the Trivy result published as a run annotation, image saved as an artifact | The build fails or there is a fixable HIGH/CRITICAL CVE |
 | `security-gate` | Runs with `if: always()`, writes a summary table, and requires every security job to be `success` | Any security job failed, was skipped or was cancelled |
 | `push-images` (matrix) | `main` only. Loads the scanned image, tags it `ghcr.io/abhinavsuri90/spendwise-<component>:<12-char sha>`, pushes with `GITHUB_TOKEN` (`packages: write`) | The push fails |
-| `deploy` | Creates a **kind** cluster, installs ingress-nginx, creates the DB Secret and a GHCR pull Secret, then runs `helm upgrade --install` with the SHA tags, `helm test`, and a smoke test **through the Ingress** (`/`, a POST to `/api/expenses`, `/api/summary`) | The rollout, `helm test`, or the smoke test fails |
+| `deploy` | Creates a **kind** cluster, installs ingress-nginx, creates the DB Secret and a GHCR pull Secret, then runs `helm upgrade --install` with the SHA tags, `helm test`, and a smoke test **through the Ingress** (`/`, a POST to `/api/expenses`, `/api/summary`). If anything fails, a diagnostics step publishes Pod states and warning events | The rollout, `helm test`, or the smoke test fails |
 | `gitops-update` | `main` only. `yq` writes the new tag into `values-gitops.yaml`, then commits `gitops: deploy spendwise <sha>` and pushes (with retry and rebase) | The push fails |
 
 Images are tagged only with the **commit SHA**, never `latest`, so every running Pod can be traced to the exact commit that built and scanned it. Pushing the *scanned* image artifact (instead of rebuilding) guarantees that the image in GHCR is the one Trivy checked.
 
 ### Pipeline runs on GitHub
 
-- **Runs:** [Actions → "Final project · SpendWise CI/CD"](https://github.com/Abhinavsuri90/DevOps-Coursework/actions/workflows/final-devops-project.yml). Each run shows the job graph above, the security-gate summary table, and the pushed image names in the run summary.
-- **Images:** [GHCR packages](https://github.com/Abhinavsuri90?tab=packages): `spendwise-backend` and `spendwise-frontend`, tagged with the 12-character commit SHA.
-- **Trivy in CI:** open a run → `Docker build + Trivy · backend` / `· frontend` → step "Trivy image scan (fails on fixable HIGH/CRITICAL)".
-- **GitOps commits:** the commit history shows `gitops: deploy spendwise <sha>` commits made by `github-actions[bot]`.
+Every run is listed under [Actions → "Final project · SpendWise CI/CD"](https://github.com/Abhinavsuri90/DevOps-Coursework/actions/workflows/final-devops-project.yml).
+
+**A green run.** [Run 38690443409](https://github.com/Abhinavsuri90/DevOps-Coursework/actions/runs/38690443409), on commit `73177c1`, passed all 12 jobs in 5 min 49 s:
+
+![Green pipeline run on GitHub Actions](screenshots/browser-11-github-actions-run.png)
+
+**Images in GHCR.** They are tagged with the 12-character commit SHA, never `latest` (`ghcr.io/abhinavsuri90/spendwise-backend` and `-frontend`):
+
+![GHCR spendwise-backend versions tagged with commit SHAs](screenshots/browser-12-ghcr-tags.png)
+
+**Commit history (M3).** It has meaningful messages, including the bot's `gitops: deploy spendwise <sha>` commits:
+
+![Commit history on GitHub](screenshots/browser-13-github-commits.png)
+
+**Getting the deploy job green (a real issue).** The first runs failed in *Deploy with Helm to Kubernetes (kind)*, while everything before it was green.
+
+- Job logs on GitHub require signing in, but annotations are public. So I split the step in three and added a failure-only *Diagnostics* step that publishes Pod states and warning events as an annotation.
+- The next run showed that `helm upgrade --install` had **succeeded** with every Pod Running. Only `helm test` failed, and the test Pod no longer existed.
+- **Root cause:** the test hook had `hook-delete-policy: hook-succeeded`, so Helm deleted the Pod as soon as it passed. The Helm on the runner then failed while reading that Pod's logs for `--logs`. (Helm 4.3 on my laptop reads the logs first, which is why it passed locally.)
+- **Fix:** keep the test Pod (`before-hook-creation` only). Every run since has been green.
 
 ## DevSecOps implementation
 
@@ -415,6 +432,10 @@ More hardening is described in [security/SECURITY.md](security/SECURITY.md):
 Gitleaks found one real secret on disk: `docker/.env` (the random Compose DB password). That file is git-ignored and never reaches GitHub. A scan of exactly what Git would publish is clean, which is what CI sees on a fresh checkout.
 
 ![Trivy image scans of both images: 0 HIGH/CRITICAL](screenshots/09-trivy-image-scan.png)
+
+**Trivy in the pipeline.** Each `build-images` job scans its image and then publishes the result as an annotation, so it can be read on the run page without signing in. Both images reported **0 CRITICAL and 0 HIGH** fixable vulnerabilities, in the Alpine OS packages and in the backend's Python packages. That is why the security gate passed and the images were pushed:
+
+![Trivy results published by the CI run](screenshots/browser-15-github-trivy-annotations.png)
 
 **What Trivy scanned and what the result means:**
 
@@ -470,6 +491,15 @@ The same checks from the terminal (metrics, ServiceMonitor, targets, rule health
 - `am` lists what reached Alertmanager
 - `query '<PromQL>'` runs an instant query
 
+**On an 8 GB laptop.** Minikube has about 3.4 GB of memory for everything: the control plane, the monitoring stack, Argo CD and the app. When Argo CD runs too, pause what you are not showing, and bring it back for the monitoring part of a demo:
+
+```bash
+kubectl -n monitoring patch prometheus kps-kube-prometheus-stack-prometheus --type merge -p '{"spec":{"replicas":1}}'
+kubectl -n monitoring patch alertmanager kps-kube-prometheus-stack-alertmanager --type merge -p '{"spec":{"replicas":1}}'
+kubectl -n monitoring scale deploy/kps-grafana --replicas=1
+kubectl -n spendwise scale deploy/spendwise-traffic --replicas=1      # synthetic traffic for the panels
+```
+
 ## GitOps
 
 **Git is the source of truth for what runs in the cluster.** The CI pipeline never runs `kubectl` against it. It only commits the new image tag to Git, and **Argo CD**, running inside the cluster, pulls that change and applies it.
@@ -512,17 +542,47 @@ kubectl -n argocd get applications.argoproj.io spendwise -w
 
 The database Secret stays outside Git: it is created once per cluster by `kubernetes/create-db-secret.sh`. With Sealed Secrets or the External Secrets Operator it could also live in Git, in encrypted form. When the manual release is uninstalled, the StatefulSet's PVC is kept, so the Argo CD-managed PostgreSQL starts with all existing data.
 
-### Live demo (M10): commit → pipeline → deployment update
+### GitOps handover (recorded)
 
-1. Install Argo CD and apply [gitops/argocd-application.yaml](gitops/argocd-application.yaml) (commands above). Argo CD syncs the tag currently in `values-gitops.yaml`.
-2. Make a visible change, e.g. the subtitle in [App.jsx](application/frontend/src/App.jsx) (`Track what you spend this semester`). Then `git commit` and `git push`.
-3. On GitHub → Actions, watch the pipeline: tests → scans → images → gate → GHCR push → kind deploy → `gitops-update`.
-4. `git pull` shows the bot's commit `gitops: deploy spendwise <sha>` changing only the two tags.
-5. Within about 60 s Argo CD shows *OutOfSync → Syncing → Synced/Healthy*, and `kubectl -n spendwise get pods` shows new Pods with the image `…:<sha>`.
-6. Refresh `http://spendwise.local`: the new subtitle is live.
-7. **Self-heal:** `kubectl -n spendwise scale deploy/spendwise-frontend --replicas=1`. Argo CD puts it back to 2 within seconds, because Git says 2.
+Until now the namespace had been deployed by hand with Helm. For GitOps I handed it over to Argo CD ([evidence/10-gitops-argocd.txt](evidence/10-gitops-argocd.txt)):
 
-Session 20's [GitOps task](../session20-monitoring-observability-gitops/03-gitops/README.md) explains GitOps itself, with a plain-manifest Argo CD app.
+- `helm uninstall spendwise` removed the release. StatefulSet PVCs are not deleted, so all 2,313 rows stayed.
+- `kubectl apply -f gitops/argocd-application.yaml` registered the Application. Argo CD rendered the chart with `values-gitops.yaml` from `main`, pulled the images from GHCR, and reported **Synced + Healthy** with the same 2,313 rows.
+- To fit Argo CD into the laptop's cluster (4 CPUs and about 3.4 GB of memory), Prometheus and Alertmanager were paused during the demo and Grafana was scaled down. The monitoring screenshots above were taken earlier.
+
+![Helm release removed, PVC and data kept](screenshots/21-gitops-handover.png)
+
+![Argo CD deploys SpendWise from Git](screenshots/22-argocd-deploys-spendwise.png)
+
+![Argo CD application tree for spendwise](screenshots/browser-10-argocd-spendwise.png)
+
+### Live demo (M10): commit → pipeline → deployment update (recorded)
+
+One commit, and everything after it is automatic ([evidence/11-m10-commit-to-deploy.txt](evidence/11-m10-commit-to-deploy.txt)):
+
+| Step | What happened | When (UTC) |
+| --- | --- | --- |
+| 1. Developer | Commit [`27f4cae`](https://github.com/Abhinavsuri90/DevOps-Coursework/commit/27f4cae) *"SpendWise: show the running version (commit SHA) in the footer"* (backend `GET /api/version` + a test, React footer), then `git push` | 06:20:45 |
+| 2. CI | [Run 38691857530](https://github.com/Abhinavsuri90/DevOps-Coursework/actions/runs/38691857530): all 12 jobs green in 5 min 18 s, images pushed as `spendwise-*:27f4caee152f` | 06:20:49 → 06:26:07 |
+| 3. GitOps commit | `github-actions[bot]` committed [`74396f1`](https://github.com/Abhinavsuri90/DevOps-Coursework/commit/74396f1) *"gitops: deploy spendwise 27f4caee152f"*, changing only the two image tags | 06:26:03 |
+| 4. Argo CD | Detected `74396f1` and rolled out the new Pods (no restarts) | applied 06:27:16, Healthy 234 s after the commit appeared |
+| 5. Result | `GET /api/version` → `{"version":"27f4caee152f"}`, and the footer shows **version 27f4caee152f** | |
+
+| Before: tag `73177c13c2e9`, no version in the footer | After: tag `27f4caee152f`, footer shows the version |
+| --- | --- |
+| ![Before the rollout](screenshots/browser-09-gitops-before.png) | ![After the rollout](screenshots/browser-14-gitops-after.png) |
+
+![The whole chain in the terminal](screenshots/23-m10-commit-to-deploy.png)
+
+**To repeat it live during the presentation:**
+
+1. Change something visible, for example the subtitle in [App.jsx](application/frontend/src/App.jsx), then commit and push.
+2. Open the run on the **Actions** tab and wait for the pipeline.
+3. Run `git pull` to see the bot's tag commit.
+4. Watch Argo CD's UI or `kubectl -n spendwise get pods -w`.
+5. Refresh the app: the footer shows the new commit SHA.
+
+To show self-heal as well, run `kubectl -n spendwise scale deploy/spendwise-frontend --replicas=1`; Argo CD sets it back to 2 within seconds, because Git says 2. Session 20's [GitOps task](../session20-monitoring-observability-gitops/03-gitops/README.md) records sync, self-heal and prune step by step.
 
 ## Troubleshooting
 
@@ -575,6 +635,8 @@ These were not planted. They came up while building and running the project, and
 | A masked fault | An injected Ingress *path* fault (`/apis`) did **not** break the app | The frontend's nginx also proxies `/api/` to the backend, so misrouted calls still worked through one extra hop | Kept as a finding and replaced by the host-typo fault (#2) | [07-troubleshooting-extra-masked-path.txt](evidence/07-troubleshooting-extra-masked-path.txt), [screenshot](screenshots/17-extra-masked-ingress-path.png) |
 | Grafana "No data" | The 5xx error-rate stat was empty while there were no errors | `rate(…{status=~"5.."})` returns *no series*, not 0, when nothing has failed | `… or vector(0)` in the panel query | [files/grafana-dashboard.json](helm/spendwise/files/grafana-dashboard.json) |
 | Gitleaks finding on disk | The local secret scan found 1 leak | `docker/.env` (the random Compose password) is a real secret, but it is git-ignored | Scan exactly what Git publishes: clean. CI scans a fresh checkout | [06-devsecops-local.txt](evidence/06-devsecops-local.txt) |
+| CI deploy failed only on GitHub | `helm test` failed in the kind job, but not on my laptop | `hook-delete-policy: hook-succeeded` deleted the test Pod before the runner's Helm read its logs (`--logs`) | Keep the test Pod (`before-hook-creation`) and publish Pod states and events as a public annotation when the deploy fails | [Pipeline runs on GitHub](#pipeline-runs-on-github) |
+| Restart storm on Minikube | After Argo CD was added the node hit 96% CPU pressure and about 98% memory. Probes timed out and backends restarted in a loop, and each restart (migrations + start-up) added more load | Default 1 s probe timeouts, plus too many Pods for a 3.4 GB node (HPA up to 5, Argo CD, the full monitoring stack) | Lenient liveness (5 s timeout, 6 failures) and readiness (3 s) probes, `maxReplicas: 3` in the Minikube values files, extras paused during the demo. The next GitOps rollout replaced every Pod with **0 restarts** | [chart templates](helm/spendwise/templates/backend.yaml), [values-gitops.yaml](helm/spendwise/values-gitops.yaml) |
 | Laptop sleep | After the Mac slept with the lid closed, probes timed out and Pods restarted; metrics-server briefly had no data (HPA `<unknown>`) | The Minikube VM freezes while macOS sleeps, then everything catches up at once | Keep the lid open and use `caffeinate` during demos. `minikube stop/start` cleared the backlog | Fault 5 note |
 
 ## Screenshots
@@ -583,7 +645,7 @@ These were not planted. They came up while building and running the project, and
 | --- | --- | --- |
 | 1 | [browser-01-compose-app.png](screenshots/browser-01-compose-app.png) | The app from Docker Compose at `localhost:3000` (M1, M4) |
 | 2 | [01-docker-compose.png](screenshots/01-docker-compose.png) | `docker compose up --build`, health, non-root users, migration (M4) |
-| 3 | [02-tests.png](screenshots/02-tests.png) | ruff + `pytest -v`: 8 passed, 97% coverage (M2) |
+| 3 | [02-tests.png](screenshots/02-tests.png) | ruff + `pytest -v`: 9 passed, 97% coverage (M2) |
 | 4 | [03-helm-install.png](screenshots/03-helm-install.png) | `helm lint`, `helm upgrade --install`, `helm list` (M8) |
 | 5 | [04-k8s-objects-helm-test.png](screenshots/04-k8s-objects-helm-test.png) | `kubectl get pods`, `get svc`, Ingress/HPA/PVC/PDB, `helm test` (M8) |
 | 6 | [05-startup-race-fix.png](screenshots/05-startup-race-fix.png) | Real issue: startup race and `pg_isready` fix |
@@ -600,6 +662,12 @@ These were not planted. They came up while building and running the project, and
 | 21 | [17-extra-masked-ingress-path.png](screenshots/17-extra-masked-ingress-path.png) | The masked fault |
 | 22 | [18](screenshots/18-real-issue-unbounded-list.png) · [19](screenshots/19-real-issue-fix-verified.png) | Real issue: unbounded list endpoint, before and after |
 | 23 | [20-terraform-validate-graph.png](screenshots/20-terraform-validate-graph.png) | Terraform init/fmt/validate and dependency graph (M7) |
+| 24 | [browser-11-github-actions-run.png](screenshots/browser-11-github-actions-run.png) | Green GitHub Actions run, all 12 jobs (M5) |
+| 25 | [browser-12-ghcr-tags.png](screenshots/browser-12-ghcr-tags.png) | GHCR images tagged with commit SHAs (M5) |
+| 26 | [browser-15-github-trivy-annotations.png](screenshots/browser-15-github-trivy-annotations.png) | Trivy results of both images, published by the pipeline (M6) |
+| 27 | [browser-13-github-commits.png](screenshots/browser-13-github-commits.png) | Commit history (M3) |
+| 28 | [21](screenshots/21-gitops-handover.png) · [22](screenshots/22-argocd-deploys-spendwise.png) · [browser-10](screenshots/browser-10-argocd-spendwise.png) | GitOps handover to Argo CD, and the Argo CD application tree |
+| 29 | [browser-09](screenshots/browser-09-gitops-before.png) · [browser-14](screenshots/browser-14-gitops-after.png) · [23](screenshots/23-m10-commit-to-deploy.png) | M10 live demo: before, after, and the whole chain in the terminal |
 
 ## Lessons learned
 
@@ -612,6 +680,8 @@ These were not planted. They came up while building and running the project, and
 7. **Tag images with the commit SHA and promote the scanned artifact.** It is always clear what is running, and it is the same bytes that passed the gate.
 8. **Keep secrets out of Git by design.** Random passwords are created at deploy time, `.env` is git-ignored, CI uses the short-lived `GITHUB_TOKEN`, and Gitleaks runs on every push.
 9. **GitOps removes cluster credentials from CI.** The pipeline only commits a tag. Argo CD pulls the change, and drift is reverted automatically.
+10. **Make CI failures readable by everyone.** GitHub logs need a login, but annotations do not, so the pipeline publishes its diagnostics and Trivy results as annotations. That is how the `helm test` problem that happened only on the runner was found.
+11. **Size liveness probes for the slowest node you run on.** With 1 s timeouts a busy laptop cluster restarted healthy Pods in a loop. Lenient liveness, strict readiness and a smaller HPA cap made the next rollout restart-free.
 
 ## Cleanup
 
