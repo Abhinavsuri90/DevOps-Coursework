@@ -8,6 +8,6 @@ data:
   index.html: |
     <!doctype html>
     <html><body>
-    <h1>GitOps demo - version 1</h1>
+    <h1>GitOps demo - version 2</h1>
     <p>Desired state lives in Git: github.com/Abhinavsuri90/DevOps-Coursework</p>
     </body></html>
