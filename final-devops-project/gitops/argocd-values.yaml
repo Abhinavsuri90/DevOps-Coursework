@@ -5,7 +5,8 @@ dex:
 notifications:
   enabled: false
 applicationSet:
-  enabled: false
+  # Chart 10.x has no 'enabled' switch for this controller; 0 replicas turns it off.
+  replicas: 0
 configs:
   params:
     # Plain HTTP inside the cluster; the UI is reached with kubectl port-forward.

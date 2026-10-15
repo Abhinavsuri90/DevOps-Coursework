@@ -1,0 +1,21 @@
+# Prune, part 1: a commit adds app/feature-flags.yaml, so Argo CD creates the ConfigMap
+$ git -C ../.. log -1 --format='commit %h %s' && git -C ../.. show --stat --format= HEAD | head -2
+commit 1482441 GitOps demo: add a feature-flags ConfigMap
+ .../03-gitops/app/feature-flags.yaml                              | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+$ SECONDS=0; until kubectl -n gitops-demo get configmap feature-flags >/dev/null 2>&1; do sleep 5; done; echo "created by Argo CD after ${SECONDS}s"; kubectl -n gitops-demo get configmap feature-flags -o jsonpath='{.metadata.name} data={.data}{"\n"}'
+created by Argo CD after 130s
+feature-flags data={"dark_mode":"true"}
+# Prune, part 2: a commit deletes app/feature-flags.yaml; with prune: true Argo CD deletes the ConfigMap from the cluster
+$ git -C ../.. log -1 --format='commit %h %s' && git -C ../.. show --stat --format= HEAD | head -2
+commit 92df06a GitOps demo: remove the feature-flags ConfigMap (Argo CD prunes it)
+ .../03-gitops/app/feature-flags.yaml                              | 8 --------
+ 1 file changed, 8 deletions(-)
+$ SECONDS=0; until ! kubectl -n gitops-demo get configmap feature-flags >/dev/null 2>&1; do sleep 5; done; echo "pruned by Argo CD after ${SECONDS}s"
+pruned by Argo CD after 65s
+$ kubectl -n gitops-demo get configmap feature-flags 2>&1
+Error from server (NotFound): configmaps "feature-flags" not found
+$ kubectl -n argocd get applications.argoproj.io gitops-demo -o jsonpath='sync={.status.sync.status} health={.status.health.status} revision={.status.sync.revision}{"\n"}'
+sync=Synced health=Healthy revision=92df06a548f02a25379e553144e98d5c9c7fd920
+$ git -C ../.. rev-parse HEAD
+92df06a548f02a25379e553144e98d5c9c7fd920

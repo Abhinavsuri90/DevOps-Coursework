@@ -1,0 +1,20 @@
+# Self-heal: someone changes the live cluster by hand (drift). Git still says replicas: 3.
+$ kubectl -n gitops-demo scale deployment gitops-web --replicas=1
+deployment.apps/gitops-web scaled
+$ kubectl -n gitops-demo get deploy gitops-web -o jsonpath='spec.replicas right after the manual change: {.spec.replicas}{"\n"}'
+spec.replicas right after the manual change: 1
+$ SECONDS=0; until [ "$(kubectl -n gitops-demo get deploy gitops-web -o jsonpath='{.spec.replicas}')" = 3 ]; do sleep 1; done; echo "Argo CD reverted the drift after ${SECONDS}s"
+Argo CD reverted the drift after 2s
+$ kubectl -n argocd get applications.argoproj.io gitops-demo -o jsonpath='sync={.status.sync.status} health={.status.health.status}{"\n"}'
+sync=Synced health=Progressing
+$ kubectl -n argocd get events --field-selector involvedObject.name=gitops-demo --sort-by=.lastTimestamp -o custom-columns=REASON:.reason,MESSAGE:.message --no-headers | tail -4 | cut -c1-170
+ResourceUpdated      Updated sync status: Synced -> OutOfSync
+OperationCompleted   Partial sync operation to 55a46e82abcf9820875e2aef373895ae044178f3 succeeded
+ResourceUpdated      Updated sync status: OutOfSync -> Synced
+ResourceUpdated      Updated health status: Healthy -> Progressing
+$ kubectl get deploy -n gitops-demo
+NAME         READY   UP-TO-DATE   AVAILABLE   AGE
+gitops-web   1/3     3            1           3m6s
+$ until kubectl -n argocd get applications.argoproj.io gitops-demo -o jsonpath='{.status.sync.status}{.status.health.status}' | grep -q SyncedHealthy; do sleep 3; done; kubectl get deploy -n gitops-demo
+NAME         READY   UP-TO-DATE   AVAILABLE   AGE
+gitops-web   3/3     3            3           3m20s

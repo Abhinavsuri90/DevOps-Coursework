@@ -1,0 +1,31 @@
+# GitOps change: the ONLY action is a Git commit (replicas 2 -> 3, page version 1 -> 2). No kubectl apply.
+$ git -C ../.. show --stat --format='commit %h %s' HEAD | head -6
+commit 55a46e8 GitOps demo: scale gitops-web to 3 replicas and publish page version 2
+
+ session20-monitoring-observability-gitops/03-gitops/app/configmap.yaml  | 2 +-
+ session20-monitoring-observability-gitops/03-gitops/app/deployment.yaml | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+$ git -C ../.. show HEAD -- session20-monitoring-observability-gitops/03-gitops/app | grep -E '^[-+] ' 
+-    <h1>GitOps demo - version 1</h1>
++    <h1>GitOps demo - version 2</h1>
+-  replicas: 2
++  replicas: 3
+$ SECONDS=0; until [ "$(kubectl -n argocd get applications.argoproj.io gitops-demo -o jsonpath='{.status.sync.revision}')" = "$(git -C ../.. rev-parse HEAD)" ] && kubectl -n argocd get applications.argoproj.io gitops-demo -o jsonpath='{.status.sync.status}{.status.health.status}' | grep -q SyncedHealthy; do sleep 5; done; echo "Argo CD synced the new commit after ${SECONDS}s"
+Argo CD synced the new commit after 77s
+$ kubectl -n argocd get applications.argoproj.io gitops-demo -o jsonpath='sync={.status.sync.status} health={.status.health.status} revision={.status.sync.revision}{"\n"}'
+sync=Synced health=Healthy revision=55a46e82abcf9820875e2aef373895ae044178f3
+$ kubectl -n argocd get applications.argoproj.io gitops-demo -o jsonpath='{range .status.history[*]}history id={.id} revision={.revision} deployedAt={.deployedAt}{"\n"}{end}'
+history id=0 revision=d11f2e06d61b868d172f9cf0f63c0da280d4313d deployedAt=2026-10-15T03:51:48Z
+history id=1 revision=55a46e82abcf9820875e2aef373895ae044178f3 deployedAt=2026-10-15T03:53:46Z
+$ kubectl get deploy,pods -n gitops-demo
+NAME                         READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/gitops-web   3/3     3            3           2m8s
+
+NAME                              READY   STATUS    RESTARTS   AGE
+pod/gitops-web-7c9d99cf68-bgkzh   1/1     Running   0          2m7s
+pod/gitops-web-7c9d99cf68-cznf4   1/1     Running   0          10s
+pod/gitops-web-7c9d99cf68-t2tpz   1/1     Running   0          2m7s
+# The page comes from the ConfigMap volume; the kubelet refreshes mounted ConfigMaps within about a minute
+$ SECONDS=0; until kubectl -n gitops-demo exec deploy/gitops-web -- cat /usr/share/nginx/html/index.html | grep -q 'version 2'; do sleep 5; done; echo "new page mounted after ${SECONDS}s"; kubectl -n gitops-demo run curl --rm -i --restart=Never --image=busybox:1.36 -- wget -qO- http://gitops-web 2>/dev/null | grep -o '<h1>.*</h1>' | head -1
+new page mounted after 29s
+<h1>GitOps demo - version 2</h1>

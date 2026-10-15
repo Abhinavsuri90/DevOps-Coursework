@@ -1,0 +1,50 @@
+# Session 20 GitOps demo: install Argo CD (Helm chart argo/argo-cd 10.10.3, Argo CD v3.5.5) with argocd-values.yaml
+$ helm upgrade --install argocd argo/argo-cd --version 10.10.3 -n argocd --create-namespace -f argocd-values.yaml --wait --timeout 10m 2>&1 | grep -E '^(NAME|STATUS|REVISION|NAMESPACE)'
+NAME: argocd
+NAMESPACE: argocd
+STATUS: deployed
+REVISION: 1
+$ kubectl get pods -n argocd
+NAME                                                READY   STATUS      RESTARTS   AGE
+argocd-application-controller-0                     1/1     Running     0          39s
+argocd-applicationset-controller-775887f484-wflpd   1/1     Running     0          39s
+argocd-redis-84df998bb6-xgl6n                       1/1     Running     0          39s
+argocd-redis-secret-init-dppfz                      0/1     Completed   0          87s
+argocd-repo-server-76c9bb4bd4-zr4ff                 1/1     Running     0          39s
+argocd-server-5c7fcf74b8-bp2mj                      1/1     Running     0          39s
+# The ApplicationSet controller was still running: chart 10.x has no applicationSet.enabled key, so the values file now sets applicationSet.replicas: 0
+$ helm upgrade argocd argo/argo-cd --version 10.10.3 -n argocd -f argocd-values.yaml --wait --timeout 10m 2>&1 | grep -E '^(STATUS|REVISION)'
+STATUS: deployed
+REVISION: 2
+$ kubectl get pods -n argocd --field-selector=status.phase=Running
+NAME                                  READY   STATUS    RESTARTS   AGE
+argocd-application-controller-0       1/1     Running   0          70s
+argocd-redis-84df998bb6-xgl6n         1/1     Running   0          70s
+argocd-repo-server-76c9bb4bd4-zr4ff   1/1     Running   0          70s
+argocd-server-5c7fcf74b8-bp2mj        1/1     Running   0          70s
+# Register the Application (it points at session20-monitoring-observability-gitops/03-gitops/app on main)
+$ kubectl apply -f argocd-application.yaml
+application.argoproj.io/gitops-demo created
+$ SECONDS=0; until kubectl -n argocd get applications.argoproj.io gitops-demo -o jsonpath='{.status.sync.status}{.status.health.status}' 2>/dev/null | grep -q SyncedHealthy; do sleep 5; done; echo "Synced and Healthy after ${SECONDS}s"
+Synced and Healthy after 32s
+$ kubectl -n argocd get applications.argoproj.io gitops-demo -o jsonpath='{.metadata.name}: sync={.status.sync.status} health={.status.health.status} revision={.status.sync.revision}{"\n"}'
+gitops-demo: sync=Synced health=Healthy revision=d11f2e06d61b868d172f9cf0f63c0da280d4313d
+$ git log -1 --format='main is at %H (%s)' origin/main
+main is at d11f2e06d61b868d172f9cf0f63c0da280d4313d (Final project CI: split the deploy step and publish diagnostics when it fails)
+$ kubectl get deploy,pods,svc,configmap -n gitops-demo
+NAME                         READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/gitops-web   2/2     2            2           13s
+
+NAME                              READY   STATUS    RESTARTS   AGE
+pod/gitops-web-7c9d99cf68-bgkzh   1/1     Running   0          12s
+pod/gitops-web-7c9d99cf68-t2tpz   1/1     Running   0          12s
+
+NAME                 TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)   AGE
+service/gitops-web   ClusterIP   10.109.212.136   <none>        80/TCP    13s
+
+NAME                         DATA   AGE
+configmap/gitops-web-page    1      13s
+configmap/kube-root-ca.crt   1      13s
+$ kubectl -n gitops-demo run curl --rm -i --restart=Never --image=busybox:1.36 -- wget -qO- http://gitops-web 2>/dev/null | grep -o '<h1>.*</h1>'
+<h1>GitOps demo - version 1</h1>
+<h1>GitOps demo - version 1</h1>
