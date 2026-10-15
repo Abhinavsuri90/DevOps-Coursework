@@ -160,6 +160,10 @@ footer {
   text-align: center;
 }
 
+footer .version {
+  font-family: ui-monospace, Menlo, monospace;
+}
+
 @media (max-width: 640px) {
   form {
     grid-template-columns: 1fr 1fr;

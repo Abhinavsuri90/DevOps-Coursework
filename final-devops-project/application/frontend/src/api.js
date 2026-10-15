@@ -14,6 +14,7 @@ async function request(path, options = {}) {
 export const api = {
   list: (category) => request(category ? `/expenses?category=${category}` : "/expenses"),
   summary: () => request("/summary"),
+  version: () => request("/version"),
   create: (expense) => request("/expenses", { method: "POST", body: JSON.stringify(expense) }),
   remove: (id) => request(`/expenses/${id}`, { method: "DELETE" }),
 };

@@ -35,6 +35,12 @@ def metrics() -> Response:
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
+@app.get("/api/version")
+def version() -> dict:
+    """The running build. CI sets APP_VERSION to the commit SHA, so the UI can show what is deployed."""
+    return {"version": APP_VERSION}
+
+
 @app.get("/api/expenses", response_model=list[ExpenseOut])
 def list_expenses(
     category: str | None = None,

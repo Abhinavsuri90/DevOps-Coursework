@@ -8,6 +8,12 @@ def test_health(client):
     assert response.json()["database"] == "ok"
 
 
+def test_version(client):
+    response = client.get("/api/version")
+    assert response.status_code == 200
+    assert response.json() == {"version": "dev"}
+
+
 def test_create_and_list_expenses(client):
     created = client.post("/api/expenses", json=LUNCH)
     assert created.status_code == 201

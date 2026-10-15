@@ -12,6 +12,7 @@ export default function App() {
   const [filter, setFilter] = useState("");
   const [form, setForm] = useState({ title: "", amount: "", category: "food", spent_on: today() });
   const [error, setError] = useState("");
+  const [version, setVersion] = useState("");
 
   const refresh = useCallback(async () => {
     try {
@@ -27,6 +28,10 @@ export default function App() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    api.version().then((info) => setVersion(info.version)).catch(() => setVersion(""));
+  }, []);
 
   async function addExpense(event) {
     event.preventDefault();
@@ -146,7 +151,10 @@ export default function App() {
           </table>
         )}
       </section>
-      <footer>SpendWise · final DevOps project · Abhinav (24BCS10282)</footer>
+      <footer>
+        SpendWise · final DevOps project · Abhinav (24BCS10282)
+        {version && <span className="version"> · version {version}</span>}
+      </footer>
     </main>
   );
 }
