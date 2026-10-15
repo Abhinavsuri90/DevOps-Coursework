@@ -1,0 +1,8 @@
+# Added to demonstrate Argo CD pruning: it is deleted from Git in the next commit.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: feature-flags
+  namespace: gitops-demo
+data:
+  dark_mode: "true"
