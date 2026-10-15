@@ -3,14 +3,14 @@
 backend:
   image:
     repository: ghcr.io/abhinavsuri90/spendwise-backend
-    tag: "019dee72b92a"
+    tag: "73177c13c2e9"
   # Minikube runs the whole cluster in about 3.4 GB of memory, so cap autoscaling at 3 Pods.
   autoscaling:
     maxReplicas: 3
 frontend:
   image:
     repository: ghcr.io/abhinavsuri90/spendwise-frontend
-    tag: "019dee72b92a"
+    tag: "73177c13c2e9"
 ingress:
   hosts:
     - spendwise.local
