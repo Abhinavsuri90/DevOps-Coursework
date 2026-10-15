@@ -84,14 +84,16 @@ Argo CD v3.5.5 was installed on Minikube with [argocd-values.yaml](argocd-values
 | Step | What I did | What Argo CD did | Time |
 | --- | --- | --- | --- |
 | 1. Initial sync | `kubectl apply -f argocd-application.yaml` | Cloned `main`, created the namespace, ConfigMap, Deployment (2 replicas) and Service. **Synced + Healthy** | 32 s |
-| 2. Change through Git | Commit [`55a46e8`](https://github.com/Abhinavsuri90/DevOps-Coursework/commit/55a46e8): `replicas: 2 → 3`, page `version 1 → version 2`. **No kubectl** | Detected the new commit, applied it: 3/3 Pods, page served "GitOps demo - version 2" | 77 s |
+| 2. Change through Git | Commit [`5d5e64c`](https://github.com/Abhinavsuri90/DevOps-Coursework/commit/5d5e64c): `replicas: 2 → 3`, page `version 1 → version 2`. **No kubectl** | Detected the new commit, applied it: 3/3 Pods, page served "GitOps demo - version 2" | 77 s |
 | 3. Self-heal | `kubectl scale deployment gitops-web --replicas=1` (manual drift) | Saw the drift, status *OutOfSync*, and reset `replicas` to 3, because Git is the truth | 2 s |
-| 4. Prune, add | Commit [`1482441`](https://github.com/Abhinavsuri90/DevOps-Coursework/commit/1482441) adds `app/feature-flags.yaml` | Created ConfigMap `feature-flags` | 130 s |
-| 5. Prune, delete | Commit [`92df06a`](https://github.com/Abhinavsuri90/DevOps-Coursework/commit/92df06a) deletes the file | **Deleted** the ConfigMap from the cluster (`prune: true`) | 65 s |
+| 4. Prune, add | Commit [`81c5b8d`](https://github.com/Abhinavsuri90/DevOps-Coursework/commit/81c5b8d) adds `app/feature-flags.yaml` | Created ConfigMap `feature-flags` | 130 s |
+| 5. Prune, delete | Commit [`c7a29eb`](https://github.com/Abhinavsuri90/DevOps-Coursework/commit/c7a29eb) deletes the file | **Deleted** the ConfigMap from the cluster (`prune: true`) | 65 s |
+
+**Commit IDs:** this repository's history was rewritten after the demo, when commit messages were cleaned up. The same commits therefore have new IDs: `55a46e8` → `5d5e64c`, `1482441` → `81c5b8d`, `92df06a` → `c7a29eb`, and `d11f2e0` (the commit synced first) → `fc12367`. The transcripts and the Argo CD screenshot show the IDs as they were during the demo.
 
 The waits of about 1–2 minutes come from polling: Argo CD checks Git every 60 s (`timeout.reconciliation`). A GitHub webhook would make syncs almost instant.
 
-**Argo CD UI after the demo:** the app is Healthy and Synced to `main (92df06a)` with auto-sync enabled, and the tree shows Namespace, ConfigMap, Service and Deployment → ReplicaSet → 3 Pods.
+**Argo CD UI after the demo:** the app is Healthy and Synced to `main (92df06a)` (now `c7a29eb`, see the note below) with auto-sync enabled, and the tree shows Namespace, ConfigMap, Service and Deployment → ReplicaSet → 3 Pods.
 
 ![Argo CD application tree](screenshots/01-argocd-gitops-demo-tree.png)
 

@@ -131,6 +131,16 @@ The package build, Docker build, smoke test (including the `400` for an unknown 
 - **Image:** [GHCR packages](https://github.com/Abhinavsuri90?tab=packages): `gpa-calculator`, tagged with the commit SHA and `latest`.
 - **Deployments:** the repository's *Environments → staging* page lists each CD deployment.
 
+**CI run** ([run 38690443468](https://github.com/Abhinavsuri90/DevOps-Coursework/actions/runs/38690443468)): lint → tests on Python 3.11, 3.12 and 3.13 → build artifact + Docker build and smoke test, plus the secrets demo. All jobs are green:
+
+![Session 16 CI run on GitHub](screenshots/04-github-ci-run.png)
+
+**CD run** ([run 38690551859](https://github.com/Abhinavsuri90/DevOps-Coursework/actions/runs/38690551859)): started by `workflow_run` once that CI run succeeded. It published the image to GHCR and deployed it to `staging`:
+
+![Session 16 CD run on GitHub](screenshots/05-github-cd-run.png)
+
+The first CI run on GitHub had one failed job, *Secrets demo*. The workflow sets `working-directory: session-16-github-actions` for every job, but that job never checks out the repository, so the folder did not exist on the runner. The fix is a job-level `defaults.run.working-directory: .`.
+
 ## Secrets: how to add one
 
 1. Open the repository's **Settings → Secrets and variables → Actions → New repository secret**.

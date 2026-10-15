@@ -1,0 +1,58 @@
+# M10 live demo: commit a change -> pipeline runs -> new images -> GitOps tag commit -> Argo CD updates the deployment
+# Before: the running build (tag 73177c13c2e9) has no /api/version route and the footer shows no version
+$ kubectl get deploy spendwise-backend spendwise-frontend -n spendwise -o custom-columns='DEPLOYMENT:.metadata.name,IMAGE:.spec.template.spec.containers[0].image'
+DEPLOYMENT           IMAGE
+spendwise-backend    ghcr.io/abhinavsuri90/spendwise-backend:73177c13c2e9
+spendwise-frontend   ghcr.io/abhinavsuri90/spendwise-frontend:73177c13c2e9
+$ curl -s -o /dev/null -w 'GET /api/version -> HTTP %{http_code}\n' -H 'Host: spendwise.local' http://127.0.0.1:18080/api/version
+GET /api/version -> HTTP 404
+# 1. Developer: commit the change (backend GET /api/version + a test, footer shows the version) and push
+$ git -C .. commit -q -m 'SpendWise: show the running version (commit SHA) in the footer' && git -C .. log -1 --format='commit %h %s' && git -C .. show --stat --format= HEAD
+commit 27f4cae SpendWise: show the running version (commit SHA) in the footer
+ final-devops-project/application/backend/app/main.py           |  6 ++++++
+ .../application/backend/tests/test_expenses.py                 |  6 ++++++
+ final-devops-project/application/frontend/src/App.jsx          | 10 +++++++++-
+ final-devops-project/application/frontend/src/api.js           |  1 +
+ final-devops-project/application/frontend/src/styles.css       |  4 ++++
+ 5 files changed, 26 insertions(+), 1 deletion(-)
+$ git -C .. push origin main 2>&1 | tail -1
+   c2b39cb..27f4cae  main -> main
+$ git -C .. rev-parse HEAD
+27f4caee152f7ec57fa4547c0bf32b195dbab693
+# 2. GitHub Actions: the push started the pipeline (tests, scans, images, gate, GHCR push, kind deploy, GitOps update)
+$ python3 ../scripts/gh-run-status.py 27f4caee152f7ec57fa4547c0bf32b195dbab693 'Final project · SpendWise CI/CD' --wait
+Final project · SpendWise CI/CD on 27f4caee152f: completed / success (waited 277s)
+https://github.com/Abhinavsuri90/DevOps-Coursework/actions/runs/38691857530
+    success  Frontend · npm ci + build
+    success  Backend · lint + pytest
+    success  Secret scan · Gitleaks
+    success  SAST · Bandit + CodeQL
+    success  SCA · pip-audit + npm audit + Trivy fs
+    success  Docker build + Trivy · frontend
+    success  Docker build + Trivy · backend
+    success  Security gate
+    success  Push to GHCR · backend
+    success  Push to GHCR · frontend
+    success  Deploy with Helm to Kubernetes (kind)
+    success  GitOps · bump image tags for Argo CD
+# 3. The pipeline's last job committed the new image tag to values-gitops.yaml (CI never touches the cluster)
+$ until git -C .. fetch -q origin && git -C .. log -1 --format=%s origin/main | grep -q 'gitops: deploy spendwise 27f4caee152f'; do sleep 10; done; git -C .. log -1 --format='commit %h by %an: %s' origin/main
+commit 74396f1 by github-actions[bot]: gitops: deploy spendwise 27f4caee152f
+$ git -C .. show origin/main -- final-devops-project/helm/spendwise/values-gitops.yaml | grep -E '^[-+] '
+-    tag: "73177c13c2e9"
++    tag: "27f4caee152f"
+-    tag: "73177c13c2e9"
++    tag: "27f4caee152f"
+# 4. Argo CD notices the commit on main and rolls out the new images
+$ SECONDS=0; until [ "$(kubectl -n argocd get applications.argoproj.io spendwise -o jsonpath='{.status.sync.revision}')" = "$(git -C .. rev-parse origin/main)" ] && kubectl -n argocd get applications.argoproj.io spendwise -o jsonpath='{.status.sync.status}{.status.health.status}' | grep -q SyncedHealthy; do sleep 5; done; echo "Argo CD synced and Healthy ${SECONDS}s after the GitOps commit appeared"
+Argo CD synced and Healthy 234s after the GitOps commit appeared
+$ kubectl get deploy spendwise-backend spendwise-frontend -n spendwise -o custom-columns='DEPLOYMENT:.metadata.name,IMAGE:.spec.template.spec.containers[0].image'
+DEPLOYMENT           IMAGE
+spendwise-backend    ghcr.io/abhinavsuri90/spendwise-backend:27f4caee152f
+spendwise-frontend   ghcr.io/abhinavsuri90/spendwise-frontend:27f4caee152f
+$ kubectl -n argocd get applications.argoproj.io spendwise -o jsonpath='{range .status.history[*]}history id={.id} revision={.revision} deployedAt={.deployedAt}{"\n"}{end}'
+history id=0 revision=c2b39cb6d3162b32d024972d7c9e2c6f3a3725d4 deployedAt=2026-10-15T06:15:16Z
+history id=1 revision=74396f170a1e26afb1c9c8004998b8233f712981 deployedAt=2026-10-15T06:27:16Z
+# 5. The deployment is updated: the new route answers with the commit SHA, and the footer shows it
+$ curl -s -H 'Host: spendwise.local' http://127.0.0.1:18080/api/version; echo
+{"version":"27f4caee152f"}

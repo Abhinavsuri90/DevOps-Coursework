@@ -1,0 +1,76 @@
+# GitOps handover: the spendwise namespace moves from a hand-run Helm release to Argo CD (values-gitops.yaml, GHCR images)
+# Laptop limits (4 CPUs, 3.4 GB for the whole cluster): Prometheus and Alertmanager are paused during this demo; their screenshots are in Monitoring
+$ kubectl -n monitoring patch prometheus kps-kube-prometheus-stack-prometheus --type merge -p '{"spec":{"replicas":0}}' && kubectl -n monitoring patch alertmanager kps-kube-prometheus-stack-alertmanager --type merge -p '{"spec":{"replicas":0}}'
+prometheus.monitoring.coreos.com/kps-kube-prometheus-stack-prometheus patched
+alertmanager.monitoring.coreos.com/kps-kube-prometheus-stack-alertmanager patched
+# Before: the data lives in PVC data-spendwise-postgres-0
+$ kubectl get pvc -n spendwise
+NAME                        STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
+data-spendwise-postgres-0   Bound    pvc-82e7404b-cc2f-4cb1-be20-0db1aa1e7f15   1Gi        RWO            standard       <unset>                 40h
+$ kubectl exec -n spendwise spendwise-postgres-0 -- psql -U spendwise -d spendwise -tAc 'select count(*) from expenses;' | sed 's/^/rows in expenses: /'
+rows in expenses: 2313
+$ helm uninstall spendwise -n spendwise --wait 2>&1 | tail -1
+release "spendwise" uninstalled
+# helm uninstall removed the release's objects, but StatefulSet PVCs are not deleted, so the data survives
+$ kubectl get pvc,secret -n spendwise
+NAME                                              STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
+persistentvolumeclaim/data-spendwise-postgres-0   Bound    pvc-82e7404b-cc2f-4cb1-be20-0db1aa1e7f15   1Gi        RWO            standard       <unset>                 40h
+
+NAME                  TYPE     DATA   AGE
+secret/spendwise-db   Opaque   1      40h
+# Register the Argo CD Application: repo main, path final-devops-project/helm/spendwise, values-gitops.yaml
+$ grep -n 'tag:' helm/spendwise/values-gitops.yaml
+6:    tag: "019dee72b92a"
+13:    tag: "019dee72b92a"
+$ kubectl apply -f gitops/argocd-application.yaml
+application.argoproj.io/spendwise created
+$ SECONDS=0; until kubectl -n argocd get applications.argoproj.io spendwise -o jsonpath='{.status.sync.status}{.status.health.status}' 2>/dev/null | grep -q SyncedHealthy; do sleep 5; done; echo "Synced and Healthy after ${SECONDS}s"
+Synced and Healthy after 257s
+$ kubectl -n argocd get applications.argoproj.io spendwise -o jsonpath='sync={.status.sync.status} health={.status.health.status} revision={.status.sync.revision}{"\n"}'
+sync=Synced health=Healthy revision=c2b39cb6d3162b32d024972d7c9e2c6f3a3725d4
+$ kubectl get pods -n spendwise -o custom-columns='POD:.metadata.name,READY:.status.containerStatuses[0].ready,IMAGE:.spec.containers[0].image'
+POD                                  READY   IMAGE
+spendwise-backend-84cf7c5594-fb427   true    ghcr.io/abhinavsuri90/spendwise-backend:73177c13c2e9
+spendwise-backend-84cf7c5594-hmrcf   true    ghcr.io/abhinavsuri90/spendwise-backend:73177c13c2e9
+spendwise-backend-84cf7c5594-tn7b6   true    ghcr.io/abhinavsuri90/spendwise-backend:73177c13c2e9
+spendwise-frontend-cf9849669-7nlq6   true    ghcr.io/abhinavsuri90/spendwise-frontend:73177c13c2e9
+spendwise-frontend-cf9849669-nmd9g   true    ghcr.io/abhinavsuri90/spendwise-frontend:73177c13c2e9
+spendwise-postgres-0                 true    postgres:17-alpine
+$ kubectl get deploy,statefulset,svc,ingress,hpa,pvc,servicemonitor,prometheusrule -n spendwise
+NAME                                 READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/spendwise-backend    3/3     3            3           3m28s
+deployment.apps/spendwise-frontend   2/2     2            2           3m28s
+deployment.apps/spendwise-traffic    0/0     0            0           40h
+
+NAME                                  READY   AGE
+statefulset.apps/spendwise-postgres   1/1     3m27s
+
+NAME                         TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)    AGE
+service/spendwise-backend    ClusterIP   10.97.4.137     <none>        8000/TCP   3m28s
+service/spendwise-frontend   ClusterIP   10.97.191.228   <none>        80/TCP     3m28s
+service/spendwise-postgres   ClusterIP   None            <none>        5432/TCP   3m28s
+
+NAME                                  CLASS   HOSTS             ADDRESS        PORTS   AGE
+ingress.networking.k8s.io/spendwise   nginx   spendwise.local   192.168.49.2   80      3m27s
+
+NAME                                                    REFERENCE                      TARGETS        MINPODS   MAXPODS   REPLICAS   AGE
+horizontalpodautoscaler.autoscaling/spendwise-backend   Deployment/spendwise-backend   cpu: 83%/70%   2         3         3          3m28s
+
+NAME                                              STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
+persistentvolumeclaim/data-spendwise-postgres-0   Bound    pvc-82e7404b-cc2f-4cb1-be20-0db1aa1e7f15   1Gi        RWO            standard       <unset>                 41h
+
+NAME                                                     AGE
+servicemonitor.monitoring.coreos.com/spendwise-backend   3m24s
+
+NAME                                                    AGE
+prometheusrule.monitoring.coreos.com/spendwise-alerts   3m26s
+# VERIFY: same data as before the handover (the new PostgreSQL Pod reused the PVC)
+$ kubectl exec -n spendwise spendwise-postgres-0 -- psql -U spendwise -d spendwise -tAc 'select count(*) from expenses;' | sed 's/^/rows in expenses: /'
+rows in expenses: 2313
+$ curl -s -o /dev/null -w 'GET http://spendwise.local/ -> HTTP %{http_code}\n' -H 'Host: spendwise.local' http://127.0.0.1:18080/ && curl -s -H 'Host: spendwise.local' http://127.0.0.1:18080/api/summary | cut -c1-70
+GET http://spendwise.local/ -> HTTP 200
+{"total":"45876.00","count":2313,"by_category":[{"category":"food","to
+$ git -C .. fetch -q origin && git -C .. log -3 --format='%h %an: %s' origin/main
+c2b39cb github-actions[bot]: gitops: deploy spendwise 73177c13c2e9
+73177c1 Abhinav: Re-render the final project test screenshot from the current 8-test run
+126b603 github-actions[bot]: gitops: deploy spendwise 019dee72b92a

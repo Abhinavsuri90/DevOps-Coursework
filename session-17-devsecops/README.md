@@ -121,6 +121,10 @@ The image placeholder `IMAGE_PLACEHOLDER` is replaced with the exact SHA-tagged 
 - **Image:** [GHCR packages](https://github.com/Abhinavsuri90?tab=packages): `campus-library`, tagged with the commit SHA.
 - **Deploy:** the `10 · Deploy to Kubernetes (kind)` job log shows `kubectl get deploy,pods,svc` and the smoke-test responses, and its summary shows the deployed image and `/health`.
 
+A green run ([run 38690443396](https://github.com/Abhinavsuri90/DevOps-Coursework/actions/runs/38690443396)) passed all ten stages in order, from *1 · Build* to *10 · Deploy to Kubernetes (kind)*:
+
+![Session 17 DevSecOps run on GitHub](screenshots/07-github-devsecops-run.png)
+
 ## Lessons learned
 
 - **Scan the image as well as the code.** The source and `requirements.txt` were clean, yet the image still had four fixable HIGH CVEs from tooling that came with the base image.
