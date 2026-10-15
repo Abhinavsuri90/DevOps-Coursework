@@ -3,11 +3,11 @@
 backend:
   image:
     repository: ghcr.io/abhinavsuri90/spendwise-backend
-    tag: "pending"
+    tag: "f63e9a4e2faa"
 frontend:
   image:
     repository: ghcr.io/abhinavsuri90/spendwise-frontend
-    tag: "pending"
+    tag: "f63e9a4e2faa"
 ingress:
   hosts:
     - spendwise.local
