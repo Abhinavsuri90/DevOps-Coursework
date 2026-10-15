@@ -73,18 +73,23 @@ spec:
               path: /health
               port: http
             periodSeconds: 3
+            timeoutSeconds: 3
             failureThreshold: 40
           readinessProbe:
             httpGet:
               path: /health
               port: http
             periodSeconds: 5
+            timeoutSeconds: 3
+          # Liveness is deliberately lenient: on a busy node a slow answer is not a dead process,
+          # and restarting healthy Pods only adds load (seen on Minikube under CPU pressure).
           livenessProbe:
             httpGet:
               path: /health
               port: http
             periodSeconds: 15
-            failureThreshold: 3
+            timeoutSeconds: 5
+            failureThreshold: 6
           resources:
             {{- toYaml .Values.backend.resources | nindent 12 }}
           securityContext:

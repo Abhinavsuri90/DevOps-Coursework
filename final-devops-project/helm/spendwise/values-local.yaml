@@ -3,6 +3,9 @@ backend:
   image:
     repository: spendwise-backend
     tag: local
+  # Minikube runs the whole cluster in about 3.4 GB of memory, so cap autoscaling at 3 Pods.
+  autoscaling:
+    maxReplicas: 3
 frontend:
   image:
     repository: spendwise-frontend

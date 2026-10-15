@@ -656,18 +656,23 @@ spec:
               path: /health
               port: http
             periodSeconds: 3
+            timeoutSeconds: 3
             failureThreshold: 40
           readinessProbe:
             httpGet:
               path: /health
               port: http
             periodSeconds: 5
+            timeoutSeconds: 3
+          # Liveness is deliberately lenient: on a busy node a slow answer is not a dead process,
+          # and restarting healthy Pods only adds load (seen on Minikube under CPU pressure).
           livenessProbe:
             httpGet:
               path: /health
               port: http
             periodSeconds: 15
-            failureThreshold: 3
+            timeoutSeconds: 5
+            failureThreshold: 6
           resources:
             limits:
               cpu: 500m
@@ -742,11 +747,14 @@ spec:
               path: /healthz
               port: http
             periodSeconds: 5
+            timeoutSeconds: 3
           livenessProbe:
             httpGet:
               path: /healthz
               port: http
             periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 6
           resources:
             limits:
               memory: 64Mi
@@ -787,7 +795,7 @@ spec:
     kind: Deployment
     name: spendwise-backend
   minReplicas: 2
-  maxReplicas: 5
+  maxReplicas: 3
   metrics:
     - type: Resource
       resource:
@@ -856,11 +864,14 @@ spec:
             exec:
               command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
             periodSeconds: 5
+            timeoutSeconds: 5
           livenessProbe:
             exec:
               command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
             initialDelaySeconds: 20
             periodSeconds: 15
+            timeoutSeconds: 10
+            failureThreshold: 6
           resources:
             limits:
               memory: 512Mi
