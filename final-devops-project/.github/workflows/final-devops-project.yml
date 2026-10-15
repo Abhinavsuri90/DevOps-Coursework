@@ -236,23 +236,28 @@ jobs:
             --repo https://kubernetes.github.io/ingress-nginx -n ingress-nginx --create-namespace \
             --set controller.service.type=ClusterIP --set controller.admissionWebhooks.enabled=false \
             --wait --timeout 5m
-      - name: Helm upgrade --install
+      - name: Namespace and Secrets
         working-directory: final-devops-project
         run: |
-          owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
-          tag="${GITHUB_SHA::12}"
           kubectl apply -f kubernetes/namespace.yaml
           bash kubernetes/create-db-secret.sh spendwise
           kubectl -n spendwise create secret docker-registry ghcr-pull \
             --docker-server=ghcr.io --docker-username='${{ github.actor }}' \
             --docker-password='${{ secrets.GITHUB_TOKEN }}'
+      - name: Helm upgrade --install
+        working-directory: final-devops-project
+        run: |
+          helm version --short
+          owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          tag="${GITHUB_SHA::12}"
           helm upgrade --install spendwise helm/spendwise -n spendwise \
             --set backend.image.repository="ghcr.io/${owner}/spendwise-backend" --set backend.image.tag="$tag" \
             --set frontend.image.repository="ghcr.io/${owner}/spendwise-frontend" --set frontend.image.tag="$tag" \
             --set 'imagePullSecrets[0].name=ghcr-pull' \
             --wait --timeout 6m
           kubectl get pods,svc,ingress,hpa,pvc -n spendwise
-          helm test spendwise -n spendwise --logs
+      - name: helm test
+        run: helm test spendwise -n spendwise --logs
       - name: Smoke test through the Ingress
         run: |
           kubectl -n ingress-nginx port-forward svc/ingress-nginx-controller 8080:80 >/dev/null 2>&1 &
@@ -265,6 +270,18 @@ jobs:
           curl -fsS -H 'Host: spendwise.local' http://127.0.0.1:8080/api/summary | tee summary.json
           echo
           grep -q '"count":1' summary.json
+      - name: Diagnostics (only runs if a step above failed)
+        if: failure()
+        run: |
+          kubectl get pods -A -o wide || true
+          kubectl -n spendwise describe pods || true
+          kubectl -n spendwise get events --sort-by=.lastTimestamp || true
+          kubectl -n spendwise logs -l app.kubernetes.io/instance=spendwise --all-containers --tail=40 --prefix || true
+          # Job logs need a GitHub login, annotations do not: publish the essentials as one.
+          pods="$(kubectl -n spendwise get pods --no-headers 2>&1 | awk '{print $1" "$2" "$3}' | paste -sd ';' -)"
+          warn="$(kubectl -n spendwise get events --field-selector type=Warning --sort-by=.lastTimestamp \
+            -o custom-columns=OBJ:.involvedObject.name,REASON:.reason,MSG:.message --no-headers 2>&1 | tail -6 | cut -c1-220 | paste -sd ';' -)"
+          echo "::error title=Deploy diagnostics::pods: ${pods} || warnings: ${warn}"
 
   gitops-update:
     name: GitOps · bump image tags for Argo CD
